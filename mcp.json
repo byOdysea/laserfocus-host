@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "memory": {
+      "name": "Simple Memory Server",
+      "description": "Provides basic key-value storage using a local file.",
+      "type": "local",
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-memory"],
+      "env": {
+        "MEMORY_FILE_PATH": "./memory.json"
+      }
+    }
+  }
+}
