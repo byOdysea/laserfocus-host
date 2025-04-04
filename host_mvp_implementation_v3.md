@@ -262,23 +262,25 @@ class LLMServiceError extends Error {
 2. Formats history according to the LLM's expected input format.
 3. Assembles the final system prompt using `compileSystemPrompt`:
    - Includes base system instructions.
-   - Includes host-defined rules (e.g., "Respond ONLY with JSON { 'tool': ..., 'arguments': ... } for tool calls").
+   - **Crucially, includes host-defined rules for tool invocation format (e.g., "Respond ONLY with JSON wrapped in `tool ... ` delimiters").**
    - Lists available tools with descriptions and parameters.
-   - Appends the specific textual guidance fetched from each server's `"tool-descriptions"` prompt.
+   - Appends the specific textual guidance fetched from each server's `"tool-descriptions"` prompt or the generated fallback.
 4. Estimates token count to verify within limits.
 5. Internally streams raw LLM responses via `generateRawResponse`.
+   - **Handles potential chunking:** Implements buffering logic to assemble complete tool call JSON blobs even if they arrive across multiple stream chunks, using the specified delimiters (e.g., `tool ... `) to identify the start and end of the JSON block.
 6. Converts each raw response to a structured ChatMessage via `convertRawResponseToChatMessage`:
-   - Text responses become assistant messages with text content.
-   - Tool calls become assistant messages with tool metadata, expected in the specified JSON format.
-   - Handles potential malformed JSON from the LLM gracefully (e.g., logs error, returns a system error message).
+   - Text responses (outside delimiters) become assistant messages with text content.
+   - **Successfully parsed JSON tool calls (assembled from buffer) become assistant messages with tool metadata.**
+   - Handles potential malformed JSON (parsing errors after assembling the complete block) gracefully (e.g., logs error, returns a system error message).
+   - Handles streaming errors (e.g., incomplete delimiter blocks) gracefully.
 7. Yields properly formatted ChatMessage objects to the Orchestrator.
 8. Handles timeouts or client cancellations.
 
 #### Prompt Engineering for Tools
 
 - Relies on the `compileSystemPrompt` method to assemble the context.
-- **Crucially includes a host-defined instruction mandating the exact JSON output format for tool calls.**
-- Leverages the specific instructions fetched from each server's `"tool-descriptions"` prompt.
+- **Crucially includes a host-defined instruction mandating the exact output format for tool calls, including wrapping the JSON in specific delimiters (e.g., `tool ... `).** Example: "When you need to use a tool, respond ONLY with the tool call JSON object enclosed in triple backticks like this:\n\`\`\`tool\n{ \"tool\": \"qualifiedToolName\", \"arguments\": { /_ args _/ } }\n\`\`\`\nDo not add any other text before the opening \`\`\`tool or after the closing \`\`\`."
+- Leverages the specific instructions fetched from each server's `"tool-descriptions"` prompt (or generated fallback).
 - Instructs the LLM (via the base prompt) to maintain a coherent narrative around tool calls and handle results naturally.
 
 ### 2.4 MCP Coordinator
@@ -540,13 +542,104 @@ const SYSTEM_MESSAGES = {
 };
 ```
 
-## 3. Implementation Phases
+## 3. Project Structure
+
+A well-organized project structure is crucial for maintainability, scalability, and developer collaboration. This structure reflects the modular architecture defined above.
+
+```
+.
+├── .env              # Environment variables (API keys, configs)
+├── .env.example      # Example environment file
+├── .eslintrc.js      # ESLint configuration
+├── .gitignore        # Git ignore rules
+├── .prettierrc.js    # Prettier configuration
+├── jest.config.js    # Jest test runner configuration
+├── mcp.json          # Default MCP server configurations
+├── mcp.schema.json   # JSON schema for validating mcp.json
+├── package.json      # Project dependencies and scripts
+├── README.md         # Project overview and setup instructions
+├── tsconfig.json     # TypeScript compiler options
+│
+├── src/              # Source code directory
+│   ├── core/         # Core business logic modules
+│   │   ├── orchestrator/ # Conversation Orchestrator logic
+│   │   │   ├── index.ts
+│   │   │   └── ConversationOrchestrator.ts
+│   │   ├── llm/        # LLM Service logic
+│   │   │   ├── index.ts
+│   │   │   ├── LLMService.ts
+│   │   │   └── adapters/ # LLM provider-specific implementations
+│   │   │       └── GeminiAdapter.ts
+│   │   └── mcp/        # MCP Coordinator logic
+│   │       ├── index.ts
+│   │       ├── MCPCoordinator.ts
+│   │       └── utils/  # MCP-specific utilities (e.g., fallback generation)
+│   │           └── generateFallbackPrompt.ts
+│   │
+│   ├── handlers/     # Request handlers (entry points)
+│   │   └── websocket/  # WebSocket Handler logic
+│   │       ├── index.ts
+│   │       └── WebSocketHandler.ts
+│   │
+│   ├── config/       # Configuration loading and validation
+│   │   ├── index.ts
+│   │   ├── env.ts      # Environment variable loading/validation (Zod)
+│   │   └── mcpConfig.ts # mcp.json loading/validation (Zod)
+│   │
+│   ├── session/      # Session management logic
+│   │   ├── index.ts
+│   │   └── SessionManager.ts # In-memory implementation for MVP
+│   │
+│   ├── types/        # Shared TypeScript interfaces and types
+│   │   ├── index.ts
+│   │   ├── mcp.ts      # MCP-related types (ToolDefinition, ServerConfig)
+│   │   ├── chat.ts     # ChatMessage, ServerMessage, ClientMessage
+│   │   └── core.ts     # Session, RequestContext, etc.
+│   │
+│   ├── utils/        # General utility functions
+│   │   ├── index.ts
+│   │   ├── logger.ts   # Pino logger setup
+│   │   ├── errors.ts   # Custom error classes
+│   │   └── constants.ts # Shared constants (e.g., SYSTEM_MESSAGES)
+│   │
+│   └── server.ts     # Main application entry point (Fastify server setup)
+│
+└── tests/            # Test files
+    ├── fixtures/     # Mock data, sample configs (e.g., mock-mcp.json)
+    ├── integration/  # Integration tests (e.g., WebSocket <-> Orchestrator)
+    └── unit/         # Unit tests mirroring the src structure
+        ├── core/
+        │   ├── orchestrator.test.ts
+        │   ├── llm.test.ts
+        │   └── mcp.test.ts
+        ├── handlers/
+        │   └── websocket.test.ts
+        └── session/
+            └── sessionManager.test.ts
+```
+
+#### Key Directory Explanations:
+
+- **`src/`**: Contains all application source code.
+  - **`core/`**: Houses the main business logic modules (Orchestrator, LLM Service, MCP Coordinator), separated for clarity.
+  - **`handlers/`**: Entry points for external interactions. For MVP, this is solely the `websocket` handler.
+  - **`config/`**: Centralizes loading and validation of all configurations (`.env`, `mcp.json`).
+  - **`session/`**: Dedicated module for managing user sessions.
+  - **`types/`**: Global TypeScript definitions, organized by domain (chat, mcp, core).
+  - **`utils/`**: Shared utilities like logging, custom errors, and constants.
+  - **`server.ts`**: Initializes and starts the Fastify server, bringing all components together.
+- **`tests/`**: Contains all test code, structured to mirror `src/` for easy navigation. Includes unit, integration, and potentially end-to-end tests (Phase 7).
+- **Root Files**: Standard configuration files (`.env`, `tsconfig.json`, `package.json`, etc.), `mcp.json` for server definitions, and its validation schema.
+
+This structure promotes clear separation of concerns, facilitates testing, and supports future expansion by providing logical locations for new features or modules (e.g., adding REST handlers, persistent storage adapters).
+
+## 4. Implementation Phases
 
 ### Phase 1: Project Setup and Core Type Definitions
 
 - Initialize Node.js project with TypeScript
 - Configure ESLint, Prettier, Jest
-- Set up directory structure
+- Set up directory structure **(as defined in Section 3)**
 - Add core dependencies:
   - fastify, @fastify/websocket
   - @modelcontextprotocol/sdk
@@ -555,77 +648,77 @@ const SYSTEM_MESSAGES = {
   - dotenv (for environment variables)
   - pino (for logging)
 - Configure structured logger (Pino) for different environments (dev, prod).
-- Implement all interface and type definitions from Section 2.
-- Create validation schemas using Zod (for config, messages, etc.).
-- Implement base error classes (`LLMServiceError`, `ToolExecutionError`, etc.) and `RequestContext` type.
-- Set up the session management interface (`SessionManager`).
-- Implement standard system messages constants.
+- Implement all interface and type definitions from Section 2 **(placing them in `src/types/`)**.
+- Create validation schemas using Zod (for config, messages, etc.) **(placing them in `src/config/`)**.
+- Implement base error classes (`LLMServiceError`, `ToolExecutionError`, etc.) and `RequestContext` type **(placing them in `src/utils/errors.ts` and `src/types/core.ts`)**.
+- Set up the session management interface (`SessionManager`) **(placing it in `src/session/`)**.
+- Implement standard system messages constants **(placing them in `src/utils/constants.ts`)**.
 
 ### Phase 2: MCP Coordinator Implementation
 
-- Implement configuration loading (`mcp.json`, `.env`) and validation with Zod.
-- Create client initialization logic for stdio and http transports.
-- Design and implement unified tool registry with qualified names.
-- Implement discovery of tools (`tools/list`) and prompts (`prompts/get` for `"tool-descriptions"`).
-- Implement the fallback prompt generation logic (`generateFallbackToolDescription`) if `"tool-descriptions"` is missing/invalid.
-- Add JSON Schema validation for tool arguments (`validateToolArguments`).
-- Implement integrated circuit breaker for reliability (with configurable parameters).
-- Add tool execution (`executeTool`) with proper error handling.
-- Implement tool performance and reliability metrics collection.
-- Add timeout and cancellation support for tool execution.
-- Build structured error handling with specific error types (`ToolNotFoundError`, etc.).
-- Create comprehensive unit tests using mocked MCP clients/servers.
+- Implement configuration loading (`mcp.json`, `.env`) and validation with Zod **(in `src/config/`)**.
+- Create client initialization logic for stdio and http transports **(in `src/core/mcp/MCPCoordinator.ts`)**.
+- Design and implement unified tool registry with qualified names **(in `src/core/mcp/MCPCoordinator.ts`)**.
+- Implement discovery of tools (`tools/list`) and prompts (`prompts/get` for `"tool-descriptions"`) **(in `src/core/mcp/MCPCoordinator.ts`)**.
+- Implement the fallback prompt generation logic (`generateFallbackToolDescription`) if `"tool-descriptions"` is missing/invalid **(in `src/core/mcp/utils/generateFallbackPrompt.ts`)**.
+- Add JSON Schema validation for tool arguments (`validateToolArguments`) **(in `src/core/mcp/MCPCoordinator.ts`)**.
+- Implement integrated circuit breaker for reliability (with configurable parameters) **(in `src/core/mcp/MCPCoordinator.ts`)**.
+- Add tool execution (`executeTool`) with proper error handling **(in `src/core/mcp/MCPCoordinator.ts`)**.
+- Implement tool performance and reliability metrics collection **(in `src/core/mcp/MCPCoordinator.ts`)**.
+- Add timeout and cancellation support for tool execution **(in `src/core/mcp/MCPCoordinator.ts`)**.
+- Build structured error handling with specific error types (`ToolNotFoundError`, etc.) **(in `src/utils/errors.ts`)**.
+- Create comprehensive unit tests using mocked MCP clients/servers **(in `tests/unit/core/mcp.test.ts`)**.
 
 ### Phase 3: LLM Service Implementation
 
-- Create base LLM service interface (`LLMService`).
-- Implement Gemini adapter conforming to the interface.
-- Add token counting (`estimateTokenCount`) and basic context management helpers.
-- Implement `compileSystemPrompt` logic to assemble prompts from base, host rules, tool definitions, and server guidance (fetched/fallback).
-- Add raw response generation implementation (`generateRawResponse`).
-- Implement `convertRawResponseToChatMessage` including handling of text and valid/malformed tool call JSON.
-- Implement streaming chat message handling via async generators.
-- Add timeout and cancellation support for LLM generation.
-- Build structured error handling with `LLMServiceError`.
-- Add comprehensive unit tests using mocked LLM API responses (text, valid JSON, invalid JSON, errors).
+- Create base LLM service interface (`LLMService`) **(in `src/core/llm/LLMService.ts`)**.
+- Implement Gemini adapter conforming to the interface **(in `src/core/llm/adapters/GeminiAdapter.ts`)**.
+- Add token counting (`estimateTokenCount`) and basic context management helpers **(in `src/core/llm/LLMService.ts`)**.
+- Implement `compileSystemPrompt` logic to assemble prompts from base, host rules, tool definitions, and server guidance (fetched/fallback) **(in `src/core/llm/LLMService.ts`)**.
+- Add raw response generation implementation (`generateRawResponse`) **(in `src/core/llm/LLMService.ts`)**.
+- Implement `convertRawResponseToChatMessage` including handling of text and valid/malformed tool call JSON **(in `src/core/llm/LLMService.ts`)**.
+- Implement streaming chat message handling via async generators **(in `src/core/llm/LLMService.ts`)**.
+- Add timeout and cancellation support for LLM generation **(in `src/core/llm/LLMService.ts`)**.
+- Build structured error handling with `LLMServiceError` **(in `src/utils/errors.ts`)**.
+- Add comprehensive unit tests using mocked LLM API responses (text, valid JSON, invalid JSON, errors) **(in `tests/unit/core/llm.test.ts`)**.
 
 ### Phase 4: Session Management Implementation
 
-- Implement `SessionManager` interface.
-- Implement session creation and retrieval logic.
-- Build connection tracking per session (mapping `connectionId` to `sessionId`).
-- Implement session cleanup for stale sessions.
+- Implement `SessionManager` interface **(in `src/session/SessionManager.ts`)**.
+- Implement session creation and retrieval logic **(in `src/session/SessionManager.ts`)**.
+- Build connection tracking per session (mapping `connectionId` to `sessionId`) **(in `src/session/SessionManager.ts`)**.
+- Implement session cleanup for stale sessions **(in `src/session/SessionManager.ts`)**.
 - Explicitly note: MVP uses an in-memory store for sessions (persistence is post-MVP).
-- Add unit tests for session management logic.
+- Add unit tests for session management logic **(in `tests/unit/session/sessionManager.test.ts`)**.
 
 ### Phase 5: Conversation Orchestrator Implementation
 
-- Integrate with Session Manager for session state.
-- Implement message history tracking and storage within the `Session` object.
-- Add context window management (`pruneHistory` - initially simple truncation based on token count).
-- Build the main processing loop (`handleInput`) for user inputs.
+- Integrate with Session Manager for session state **(in `src/core/orchestrator/ConversationOrchestrator.ts`)**.
+- Implement message history tracking and storage within the `Session` object **(in `src/core/orchestrator/ConversationOrchestrator.ts`)**.
+- Add context window management (`pruneHistory` - initially simple truncation based on token count) **(in `src/core/orchestrator/ConversationOrchestrator.ts`)**.
+- Build the main processing loop (`handleInput`) for user inputs **(in `src/core/orchestrator/ConversationOrchestrator.ts`)**.
 - **Fetch necessary data (tool definitions, server prompts/fallbacks) from MCP Coordinator.**
 - **Pass required context (history, tool definitions, server prompts) to LLM Service.**
 - Use LLM Service's `generateChatMessage` to get structured responses (text or tool calls).
-- Implement tool call handling: parse request from `ChatMessage`, delegate to `MCPCoordinator.executeTool`, add result back to history, re-prompt LLM.
-- Integrate error recovery flows (LLM retries, tool errors) and structured logging.
-- Implement abort/cancellation handling for ongoing requests.
-- Add comprehensive unit tests with mocked dependencies (LLM Service, MCP Coordinator, Session Manager) to verify state transitions and flow logic.
+- Implement tool call handling: parse request from `ChatMessage`, delegate to `MCPCoordinator.executeTool`, add result back to history, re-prompt LLM **(in `src/core/orchestrator/ConversationOrchestrator.ts`)**.
+- Integrate error recovery flows (LLM retries, tool errors) and structured logging **(in `src/core/orchestrator/ConversationOrchestrator.ts`)**.
+- Implement abort/cancellation handling for ongoing requests **(in `src/core/orchestrator/ConversationOrchestrator.ts`)**.
+- Add comprehensive unit tests with mocked dependencies (LLM Service, MCP Coordinator, Session Manager) to verify state transitions and flow logic **(in `tests/unit/core/orchestrator.test.ts`)**.
 
 ### Phase 6: WebSocket Handler Implementation
 
-- Set up Fastify server with `@fastify/websocket` plugin.
-- Implement connection handler (`handleConnection`) to manage WebSocket lifecycle.
-- Integrate with Session Manager to associate connections with sessions.
-- Add connection health monitoring (heartbeats).
-- Build message routing logic (incoming messages to Orchestrator, outgoing messages from Orchestrator to client via `sendMessage`).
-- Implement response streaming for `text` and `status` messages yielded by the Orchestrator.
-- Add connection cleanup for stale connections (`cleanupStaleConnections`).
-- Build integration tests for the WebSocket interface interacting with a mocked Orchestrator.
+- Set up Fastify server with `@fastify/websocket` plugin **(in `src/server.ts`)**.
+- Implement connection handler (`handleConnection`) to manage WebSocket lifecycle **(in `src/handlers/websocket/WebSocketHandler.ts`)**.
+- Integrate with Session Manager to associate connections with sessions **(in `src/handlers/websocket/WebSocketHandler.ts`)**.
+- Add connection health monitoring (heartbeats) **(in `src/handlers/websocket/WebSocketHandler.ts`)**.
+- Build message routing logic (incoming messages to Orchestrator, outgoing messages from Orchestrator to client via `sendMessage`) **(in `src/handlers/websocket/WebSocketHandler.ts`)**.
+- Implement response streaming for `text` and `status` messages yielded by the Orchestrator **(in `src/handlers/websocket/WebSocketHandler.ts`)**.
+- Add connection cleanup for stale connections (`cleanupStaleConnections`) **(in `src/handlers/websocket/WebSocketHandler.ts`)**.
+- Build integration tests for the WebSocket interface interacting with a mocked Orchestrator **(in `tests/integration/websocket.test.ts`)**.
 
 ### Phase 7: Integration and E2E Testing
 
-- Connect all implemented components.
+- Connect all implemented components **(in `src/server.ts`)**.
 - Implement and verify request context propagation (e.g., using `AsyncLocalStorage`).
 - Create end-to-end test scenarios covering:
   - Basic chat.
@@ -636,9 +729,9 @@ const SYSTEM_MESSAGES = {
 - Verify circuit breaker behavior.
 - Perform basic performance/load testing to identify obvious bottlenecks (e.g., N concurrent connections).
 
-## 4. Logging and Observability
+## 5. Logging and Observability
 
-### 4.1 Logging Strategy
+### 5.1 Logging Strategy
 
 - Use structured logging with Pino
 - Include consistent fields in all logs:
@@ -655,7 +748,7 @@ const SYSTEM_MESSAGES = {
   - warn: Concerning but non-fatal issues
   - error: Failures requiring attention
 
-### 4.2 Key Logging Points
+### 5.2 Key Logging Points
 
 - WebSocket connections and disconnections
 - Connection heartbeats and health checks
@@ -668,9 +761,9 @@ const SYSTEM_MESSAGES = {
 - Configuration loading
 - Session creation and cleanup
 
-## 5. Error Handling Strategy
+## 6. Error Handling Strategy
 
-### 5.1 Error Categories
+### 6.1 Error Categories
 
 - **Transient Errors**: Temporary failures like network issues, rate limits
   - Strategy: Retry with backoff, log attempts
@@ -681,7 +774,7 @@ const SYSTEM_MESSAGES = {
 - **Timeout Errors**: Operations taking too long
   - Strategy: Cancel operation, inform user, log performance metrics
 
-### 5.2 Error Recovery Flows
+### 6.2 Error Recovery Flows
 
 (Note: These flows are primarily coordinated by the Conversation Orchestrator.)
 
@@ -707,48 +800,48 @@ const SYSTEM_MESSAGES = {
   - Prune history according to strategy (e.g., simple truncation for MVP).
   - Log token counts for monitoring and potential strategy adjustments.
 
-## 6. Security Considerations
+## 7. Security Considerations
 
-### 6.1 Input Validation
+### 7.1 Input Validation
 
 - Validate all incoming WebSocket messages against Zod schemas.
 - **Input Sanitization (MVP Scope):** Focus on preventing malformed data structures and ensuring type safety. For MVP, complex prompt injection mitigation is out of scope, but basic checks (e.g., unreasonable input length) can be considered.
 - Verify tool call arguments match expected JSON Schemas via MCP Coordinator.
 - Implement timeouts on all external operations (LLM calls, tool executions).
 
-### 6.2 API Keys and Secrets
+### 7.2 API Keys and Secrets
 
 - Store all sensitive values (API keys, etc.) in environment variables (`.env` file, loaded via `dotenv`).
 - Never expose API keys or secrets to the frontend or in client-facing messages.
 - Log sanitized requests (mask or omit credentials/sensitive headers/payload fields).
 - Document the process for key rotation.
 
-### 6.3 Tool Permission Scope
+### 7.3 Tool Permission Scope
 
 - Implement basic allowlisting/denylisting for tools if necessary (can be configured).
 - Rely heavily on tool argument validation (JSON Schema) via MCP Coordinator to prevent malformed requests.
 - Consider request rate limiting per user/session for expensive or sensitive tools (potentially post-MVP).
 - Monitor tool usage patterns for anomalies (requires logging/metrics).
 
-### 6.4 Dependency Management
+### 7.4 Dependency Management
 
 - Regularly scan dependencies for known vulnerabilities (e.g., using `npm audit` or equivalent tools like Snyk).
 - Keep dependencies updated.
 
-### 6.5 Rate Limiting
+### 7.5 Rate Limiting
 
 - Consider implementing basic rate limiting on the WebSocket endpoint (e.g., max messages per second per connection) to prevent simple denial-of-service attacks (potentially post-MVP).
 
-## 7. Deployment and DevOps
+## 8. Deployment and DevOps
 
-### 7.1 Development Environment
+### 8.1 Development Environment
 
 - Docker Compose setup with example MCP servers
 - Environment variable templates
 - Watch mode for rapid development
 - Logging configuration for development
 
-### 7.2 Testing Strategy
+### 8.2 Testing Strategy
 
 - Unit tests for each component
 - Integration tests for component pairs
@@ -757,7 +850,7 @@ const SYSTEM_MESSAGES = {
 - Stress tests for connection handling
 - Chaos testing for error recovery
 
-### 7.3 Release Process
+### 8.3 Release Process
 
 - Version control with Git
 - Semantic versioning
@@ -765,54 +858,54 @@ const SYSTEM_MESSAGES = {
 - Containerized deployment
 - Automated testing before deployment
 
-## 8. Future Considerations
+## 9. Future Considerations
 
-### 8.1 Performance Optimization
+### 9.1 Performance Optimization
 
 - Implement caching for repeated tool calls
 - Add context pruning for long conversations
 - Consider parallel tool execution for independent tools
 - Pool LLM connections for efficiency
 
-### 8.2 Scaling Beyond MVP
+### 9.2 Scaling Beyond MVP
 
 - Add persistent storage for conversation history
 - Implement session management across server restarts
 - Consider distributed architecture for horizontal scaling
 - Implement proper connection draining for graceful restarts
 
-### 8.3 Feature Expansion
+### 9.3 Feature Expansion
 
 - Support additional LLM providers
 - Add authentication and multi-user support
 - Implement more advanced error recovery strategies
 - Add tool execution analytics
 
-## 9. Technical Constraints and Standards
+## 10. Technical Constraints and Standards
 
-### 9.1 Node.js Version
+### 10.1 Node.js Version
 
 - Require Node.js 18+ for native fetch support
 - Use ESM modules for imports
 - Leverage async context features
 
-### 9.2 TypeScript Standards
+### 10.2 TypeScript Standards
 
 - Strict type checking enabled
 - Explicit return types on public methods
 - Properly typed async generators
 - No implicit any types
 
-### 9.3 Code Style
+### 10.3 Code Style
 
 - Follow AirBnB style guide
 - Use prettier for formatting
 - Document all public interfaces with JSDoc
 - Max line length of 100 characters
 
-## 10. Appendix
+## 11. Appendix
 
-### 10.1 Example Sequence Diagrams
+### 11.1 Example Sequence Diagrams
 
 #### User Message Processing
 
@@ -860,7 +953,7 @@ sequenceDiagram
     Note over WebSocket Handler,Frontend: Conversation continues
 ```
 
-### 10.2 Example Config Files
+### 11.2 Example Config Files
 
 #### mcp.json
 
@@ -897,15 +990,17 @@ MAX_TOKEN_COUNT=8192
 DEFAULT_TOOL_TIMEOUT_MS=5000
 ```
 
-### 10.3 Unified Tool Registry and Circuit Breaker
+### 11.3 Unified Tool Registry and Circuit Breaker
 
-The MCP Coordinator maintains a unified tool registry that handles all aspects of tool management:
+**Note:** The following TypeScript snippet is a conceptual illustration of how the `MCPCoordinator` might be implemented. It highlights key mechanisms like tool discovery, registry management, execution with circuit breaking, and reliability tracking. It is not a complete or definitive implementation.
 
 ```typescript
 // Implementation concept
 class MCPCoordinator {
   private toolRegistry = new Map<string, ToolRegistryEntry>();
-  private clients = new Map<string, Client>();
+  // Stores fetched/generated prompts: Map<serverId, promptText>
+  private serverToolDescriptionPrompts = new Map<string, string>();
+  private clients = new Map<string, Client>(); // Assuming MCP SDK Client type
   private activeExecutions = new Map<
     string,
     {
@@ -935,18 +1030,54 @@ class MCPCoordinator {
       this.clients.set(serverConfig.id, client);
     }
 
-    // Discover and register tools
-    await this.discoverTools();
+    // Discover tools and fetch/generate descriptions
+    await this.discoverToolsAndDescriptions();
   }
 
-  private async discoverTools(): Promise<void> {
+  // Renamed and updated to include prompt handling
+  private async discoverToolsAndDescriptions(): Promise<void> {
     for (const [serverId, client] of this.clients.entries()) {
+      let toolDefinitions: ToolDefinition[] = []; // Store definitions for fallback generation
       try {
-        const tools = await client.listTools();
+        // 1. Discover tools
+        toolDefinitions = await client.listTools(); // Assuming client.listTools() returns ToolDefinition[]
 
-        for (const tool of tools) {
+        // 2. Attempt to fetch "tool-descriptions" prompt
+        try {
+          const promptResponse = await client.getPrompt("tool-descriptions"); // Assuming client.getPrompt(name) method
+          // Basic validation (adapt based on actual SDK response structure)
+          if (
+            promptResponse &&
+            promptResponse.messages &&
+            promptResponse.messages.length === 1 &&
+            promptResponse.messages[0].role === "user" &&
+            promptResponse.messages[0].content.type === "text"
+          ) {
+            this.serverToolDescriptionPrompts.set(
+              serverId,
+              promptResponse.messages[0].content.text
+            );
+            console.info(
+              `Successfully fetched 'tool-descriptions' prompt for server ${serverId}.`
+            );
+          } else {
+            throw new Error("Invalid prompt structure received."); // Trigger fallback
+          }
+        } catch (promptError) {
+          // 3. Handle fetch failure: Generate fallback description
+          console.warn(
+            `'tool-descriptions' prompt missing or invalid for server ${serverId}. Generating fallback. Error: ${promptError.message}`
+          );
+          const fallbackPrompt = this.generateFallbackToolDescription(
+            serverId,
+            toolDefinitions
+          );
+          this.serverToolDescriptionPrompts.set(serverId, fallbackPrompt);
+        }
+
+        // 4. Register tools in the registry
+        for (const tool of toolDefinitions) {
           const qualifiedName = `${serverId}:${tool.name}`;
-
           this.toolRegistry.set(qualifiedName, {
             qualifiedName,
             definition: tool,
@@ -973,6 +1104,28 @@ class MCPCoordinator {
         );
       }
     }
+  }
+
+  // Added helper method for fallback generation (implementation is conceptual)
+  private generateFallbackToolDescription(
+    serverId: string,
+    definitions: ToolDefinition[]
+  ): string {
+    // Simple fallback: List tool names and descriptions
+    // A more sophisticated version could summarize parameters etc.
+    let description = `Guidance for Server ${serverId}:\nAvailable tools:\n`;
+    definitions.forEach((tool) => {
+      description += `- ${tool.name}: ${tool.description}\n`;
+    });
+    if (definitions.length === 0) {
+      description += "(No tools discovered)";
+    }
+    return description;
+  }
+
+  // Add method to retrieve the fetched/generated prompt
+  getToolDescriptionPrompt(serverId: string): string | null {
+    return this.serverToolDescriptionPrompts.get(serverId) || null;
   }
 
   resolveToolName(toolName: string): string {
