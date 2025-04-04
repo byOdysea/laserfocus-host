@@ -1,6 +1,33 @@
-/node_modules
-/dist
-/build
-/coverage
-/logs
-/temp
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Coverage directory used by tools like istanbul
+coverage
+*.lcov
+
+# Dependencies
+node_modules/
+
+# dotenv environment variables file
+.env
+
+# Build outputs
+dist/
+build/
+out/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Cache directories
+.npm
+.eslintcache
+
+# OS-specific
+.DS_Store
+Thumbs.db
