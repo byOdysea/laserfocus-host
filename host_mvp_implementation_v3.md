@@ -19,7 +19,7 @@ Manages bidirectional, real-time communication with frontend clients, including 
 ```typescript
 // Inbound message from frontend client
 interface ClientMessage {
-  type: "message";
+  type: 'message';
   payload: {
     text: string;
   };
@@ -37,24 +37,24 @@ interface ConnectionMetadata {
 // Outbound messages to frontend client
 type ServerMessage =
   | {
-      type: "text";
+      type: 'text';
       payload: {
         content: string;
       };
     }
   | {
-      type: "status";
+      type: 'status';
       payload: {
-        state: "processing" | "complete";
+        state: 'processing' | 'complete';
         tool?: string;
         message: string;
         data?: object;
       };
     }
   | {
-      type: "connection";
+      type: 'connection';
       payload: {
-        state: "connected" | "reconnecting" | "error";
+        state: 'connected' | 'reconnecting' | 'error';
         message: string;
         sessionId: string;
       };
@@ -93,12 +93,12 @@ Acts as the central coordinator for the entire chat experience, managing convers
 // Core message type for the conversation history
 interface ChatMessage {
   id: string; // Unique identifier
-  role: "user" | "assistant" | "system" | "tool";
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content?: string; // Text content (for user/assistant/system)
   data?: any; // Structured data (for tool results)
   createdAt: number; // Timestamp
   toolName?: string; // Name of tool if role is "tool"
-  kind?: "start" | "progress" | "complete"; // Message phase for tools
+  kind?: 'start' | 'progress' | 'complete'; // Message phase for tools
   metadata?: Record<string, any>; // Additional message metadata
 }
 
@@ -123,7 +123,7 @@ interface ErrorContext {
   action: string;
   attemptCount: number;
   originalError: Error;
-  recoveryAction?: "retry" | "fallback" | "abort";
+  recoveryAction?: 'retry' | 'fallback' | 'abort';
   timestamp: number;
   sessionId: string;
   requestId: string;
@@ -295,8 +295,8 @@ Manages connections to MCP servers, discovers tools, retrieves server-specific t
 // Configuration for an MCP server from mcp.json
 interface ServerConfig {
   id: string;
-  type: "local" | "remote";
-  transport: "stdio" | "http";
+  type: 'local' | 'remote';
+  transport: 'stdio' | 'http';
   command?: string; // For stdio transport
   args?: string[]; // For stdio transport
   url?: string; // For http transport
@@ -343,7 +343,7 @@ interface ToolRegistryEntry {
   // Server info
   serverId: string;
   client: object; // The MCP Client instance
-  transportType: "stdio" | "http";
+  transportType: 'stdio' | 'http';
 
   // Reliability metrics
   reliability: {
@@ -364,7 +364,7 @@ interface ToolRegistryEntry {
 // Request options
 interface ToolExecutionOptions {
   timeoutMs?: number;
-  priority?: "high" | "normal" | "low";
+  priority?: 'high' | 'normal' | 'low';
   retryOptions?: {
     maxRetries: number;
     delayMs: number;
@@ -376,17 +376,17 @@ interface ToolExecutionOptions {
 class ToolNotFoundError extends Error {
   constructor(toolName: string) {
     super(`Tool not found: ${toolName}`);
-    this.name = "ToolNotFoundError";
+    this.name = 'ToolNotFoundError';
   }
 }
 
 class ToolValidationError extends Error {
   constructor(
     public readonly toolName: string,
-    public readonly validationErrors: any[]
+    public readonly validationErrors: any[],
   ) {
     super(`Invalid arguments for tool: ${toolName}`);
-    this.name = "ToolValidationError";
+    this.name = 'ToolValidationError';
   }
 }
 
@@ -394,10 +394,10 @@ class CircuitOpenError extends Error {
   constructor(
     public readonly toolName: string,
     public readonly failureCount: number,
-    public readonly lastFailure: number
+    public readonly lastFailure: number,
   ) {
     super(`Circuit open for tool: ${toolName} after ${failureCount} failures`);
-    this.name = "CircuitOpenError";
+    this.name = 'CircuitOpenError';
   }
 }
 
@@ -411,10 +411,10 @@ class ToolExecutionError extends Error {
       serverId: string;
       requestId: string;
       arguments: object;
-    }
+    },
   ) {
     super(message);
-    this.name = "ToolExecutionError";
+    this.name = 'ToolExecutionError';
   }
 }
 ```
@@ -535,10 +535,8 @@ const SYSTEM_MESSAGES = {
     "Hello! I'm an AI assistant that can help answer questions and use tools to get information.",
   TOOL_ERROR: (toolName: string, error: string) =>
     `I encountered an error when using the ${toolName} tool: ${error}. Let me try a different approach.`,
-  RATE_LIMITED:
-    "I'm currently processing too many requests. Please try again in a moment.",
-  MAINTENANCE:
-    "The system is currently undergoing maintenance. Some features may be unavailable.",
+  RATE_LIMITED: "I'm currently processing too many requests. Please try again in a moment.",
+  MAINTENANCE: 'The system is currently undergoing maintenance. Some features may be unavailable.',
 };
 ```
 
@@ -1020,10 +1018,7 @@ class MCPCoordinator {
     for (const serverConfig of config.servers) {
       const client = new Client({
         transport: serverConfig.transport,
-        path:
-          serverConfig.transport === "stdio"
-            ? serverConfig.command
-            : serverConfig.url,
+        path: serverConfig.transport === 'stdio' ? serverConfig.command : serverConfig.url,
       });
 
       await client.connect();
@@ -1044,34 +1039,29 @@ class MCPCoordinator {
 
         // 2. Attempt to fetch "tool-descriptions" prompt
         try {
-          const promptResponse = await client.getPrompt("tool-descriptions"); // Assuming client.getPrompt(name) method
+          const promptResponse = await client.getPrompt('tool-descriptions'); // Assuming client.getPrompt(name) method
           // Basic validation (adapt based on actual SDK response structure)
           if (
             promptResponse &&
             promptResponse.messages &&
             promptResponse.messages.length === 1 &&
-            promptResponse.messages[0].role === "user" &&
-            promptResponse.messages[0].content.type === "text"
+            promptResponse.messages[0].role === 'user' &&
+            promptResponse.messages[0].content.type === 'text'
           ) {
             this.serverToolDescriptionPrompts.set(
               serverId,
-              promptResponse.messages[0].content.text
+              promptResponse.messages[0].content.text,
             );
-            console.info(
-              `Successfully fetched 'tool-descriptions' prompt for server ${serverId}.`
-            );
+            console.info(`Successfully fetched 'tool-descriptions' prompt for server ${serverId}.`);
           } else {
-            throw new Error("Invalid prompt structure received."); // Trigger fallback
+            throw new Error('Invalid prompt structure received.'); // Trigger fallback
           }
         } catch (promptError) {
           // 3. Handle fetch failure: Generate fallback description
           console.warn(
-            `'tool-descriptions' prompt missing or invalid for server ${serverId}. Generating fallback. Error: ${promptError.message}`
+            `'tool-descriptions' prompt missing or invalid for server ${serverId}. Generating fallback. Error: ${promptError.message}`,
           );
-          const fallbackPrompt = this.generateFallbackToolDescription(
-            serverId,
-            toolDefinitions
-          );
+          const fallbackPrompt = this.generateFallbackToolDescription(serverId, toolDefinitions);
           this.serverToolDescriptionPrompts.set(serverId, fallbackPrompt);
         }
 
@@ -1098,19 +1088,13 @@ class MCPCoordinator {
         }
       } catch (error) {
         // Log error but continue with other servers
-        console.error(
-          `Failed to discover tools for server ${serverId}:`,
-          error
-        );
+        console.error(`Failed to discover tools for server ${serverId}:`, error);
       }
     }
   }
 
   // Added helper method for fallback generation (implementation is conceptual)
-  private generateFallbackToolDescription(
-    serverId: string,
-    definitions: ToolDefinition[]
-  ): string {
+  private generateFallbackToolDescription(serverId: string, definitions: ToolDefinition[]): string {
     // Simple fallback: List tool names and descriptions
     // A more sophisticated version could summarize parameters etc.
     let description = `Guidance for Server ${serverId}:\nAvailable tools:\n`;
@@ -1118,7 +1102,7 @@ class MCPCoordinator {
       description += `- ${tool.name}: ${tool.description}\n`;
     });
     if (definitions.length === 0) {
-      description += "(No tools discovered)";
+      description += '(No tools discovered)';
     }
     return description;
   }
@@ -1130,7 +1114,7 @@ class MCPCoordinator {
 
   resolveToolName(toolName: string): string {
     // If already qualified, return as is
-    if (toolName.includes(":")) {
+    if (toolName.includes(':')) {
       return toolName;
     }
 
@@ -1158,15 +1142,12 @@ class MCPCoordinator {
       throw new CircuitOpenError(
         qualifiedName,
         entry.reliability.failureCount,
-        entry.reliability.lastFailure
+        entry.reliability.lastFailure,
       );
     }
 
     // Validate arguments
-    const validationResult = await this.validateToolArguments(
-      qualifiedName,
-      request.arguments
-    );
+    const validationResult = await this.validateToolArguments(qualifiedName, request.arguments);
     if (validationResult !== true) {
       throw new ToolValidationError(qualifiedName, validationResult.errors);
     }
@@ -1183,11 +1164,9 @@ class MCPCoordinator {
 
     try {
       const startTime = Date.now();
-      const result = await entry.client.callTool(
-        entry.definition.name,
-        request.arguments,
-        { signal: abortController.signal }
-      );
+      const result = await entry.client.callTool(entry.definition.name, request.arguments, {
+        signal: abortController.signal,
+      });
 
       const executionTimeMs = Date.now() - startTime;
 
@@ -1204,16 +1183,12 @@ class MCPCoordinator {
       // Record failure
       this.recordToolFailure(qualifiedName, error);
 
-      throw new ToolExecutionError(
-        `Failed to execute tool: ${qualifiedName}`,
-        error,
-        {
-          toolName: qualifiedName,
-          serverId: entry.serverId,
-          requestId: request.requestId,
-          arguments: request.arguments,
-        }
-      );
+      throw new ToolExecutionError(`Failed to execute tool: ${qualifiedName}`, error, {
+        toolName: qualifiedName,
+        serverId: entry.serverId,
+        requestId: request.requestId,
+        arguments: request.arguments,
+      });
     } finally {
       clearTimeout(timeout);
       this.activeExecutions.delete(request.requestId);
@@ -1251,8 +1226,7 @@ class MCPCoordinator {
     entry.reliability.lastFailure = Date.now();
 
     // Check if circuit should open
-    entry.reliability.circuitOpen =
-      entry.reliability.failureCount >= this.circuitThreshold;
+    entry.reliability.circuitOpen = entry.reliability.failureCount >= this.circuitThreshold;
 
     // Update performance metrics
     entry.performance.callCount++;
