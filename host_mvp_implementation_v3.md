@@ -66,7 +66,6 @@ type ServerMessage =
 - `setupWebSocket(app: FastifyInstance): void` - Registers WebSocket routes and handlers
 - `handleConnection(connection: WebSocket, request: FastifyRequest): void` - Sets up event handlers for a new WebSocket connection
 - `sendMessage(connection: WebSocket, message: ServerMessage): void` - Sends a message to a client
-- `broadcastMessage(sessionId: string, message: ServerMessage): void` - Sends a message to all clients in a session
 - `handleHeartbeat(connection: WebSocket): void` - Process ping/pong for connection health
 - `cleanupStaleConnections(): void` - Remove inactive connections
 - `getActiveConnections(sessionId?: string): ConnectionMetadata[]` - Get active connections
@@ -170,7 +169,7 @@ interface ErrorContext {
 
 #### Responsibility
 
-Abstracts interactions with LLM providers, handling prompting, streaming, and parsing of tool call intents.
+Abstracts interactions with LLM providers, handling prompting, streaming, and parsing of tool call intents. Handles conversion from raw LLM responses to structured chat messages for the conversation history. It assembles the final system prompt by combining a base prompt, host-defined instructions (like tool call format), tool definitions, and server-provided guidance retrieved via the MCP Coordinator.
 
 #### Types
 
@@ -178,14 +177,24 @@ Abstracts interactions with LLM providers, handling prompting, streaming, and pa
 // Interface for LLM providers (Gemini, OpenAI, etc.)
 interface LLMService {
   initialize(config: LLMConfig): Promise<void>;
-  async *generateResponse(
+
+  // Primary method that returns properly formatted ChatMessage objects
+  async *generateChatMessage(
+    history: ChatMessage[],
+    toolDefinitions: ToolDefinition[],
+    serverToolPrompts: Map<string, string>,
+    options?: GenerationOptions
+  ): AsyncGenerator<ChatMessage>;
+
+  // Internal method for raw LLM responses (implementation detail)
+  protected async *generateRawResponse(
     history: ChatMessage[],
     options?: GenerationOptions
-  ): AsyncGenerator<LLMResponse>;
+  ): AsyncGenerator<LLMRawResponse>;
 }
 
-// Response from an LLM, either text or a tool call
-type LLMResponse =
+// Raw response from an LLM, either text or a tool call
+type LLMRawResponse =
   | { type: "text"; content: string; }
   | {
       type: "tool_call";
@@ -237,37 +246,46 @@ class LLMServiceError extends Error {
 #### Methods
 
 - `constructor(config: LLMConfig)`
-- `async *generateResponse(history: ChatMessage[], options?: GenerationOptions): AsyncGenerator<LLMResponse>` - Generates LLM responses
+- `async *generateChatMessage(history: ChatMessage[], toolDefinitions: ToolDefinition[], serverToolPrompts: Map<string, string>, options?: GenerationOptions): AsyncGenerator<ChatMessage>` - Generates formatted chat messages from the LLM, incorporating tool definitions and server-provided prompts (or generated fallbacks).
+- `protected async *generateRawResponse(history: ChatMessage[], options?: GenerationOptions): AsyncGenerator<LLMRawResponse>` - Internal method for generating raw responses
 - `formatHistoryForLLM(history: ChatMessage[]): FormattedHistory` - Prepares history for LLM consumption
 - `parseToolCall(text: string): ToolCallRequest | null` - Attempts to parse a tool call JSON blob
+- `convertRawResponseToChatMessage(response: LLMRawResponse): ChatMessage` - Maps raw LLM responses to ChatMessage format
 - `estimateTokenCount(text: string): number` - Approximate token count for context management
-- `createToolPrompt(tools: ToolDefinition[]): string` - Generate consistent tool description prompts
+- `compileSystemPrompt(basePrompt: string, toolDefinitions: ToolDefinition[], serverToolPrompts: Map<string, string>): string` - Assembles the final system prompt including base instructions, tool list, JSON output format rules, and server-specific guidance (fetched or fallback).
 - `abortGeneration(requestId: string): boolean` - Cancel an in-progress generation
 - `getTokenUsage(sessionId: string): TokenUsage | null` - Get token usage for billing/monitoring
 
 #### Flow
 
-1. Receives conversation history from Orchestrator
-2. Formats history according to the LLM's expected input format
-3. Estimates token count to verify within limits
-4. Prompts LLM with appropriate system instructions for tool use
-5. Streams response chunks, parsing them as either:
-   - Text content to pass directly to the client
-   - Tool call JSON to pass to the Orchestrator for execution
-6. Handles timeouts or client cancellations
+1. Receives conversation history, available tool definitions, and fetched server tool description prompts from Orchestrator.
+2. Formats history according to the LLM's expected input format.
+3. Assembles the final system prompt using `compileSystemPrompt`:
+   - Includes base system instructions.
+   - Includes host-defined rules (e.g., "Respond ONLY with JSON { 'tool': ..., 'arguments': ... } for tool calls").
+   - Lists available tools with descriptions and parameters.
+   - Appends the specific textual guidance fetched from each server's `"tool-descriptions"` prompt.
+4. Estimates token count to verify within limits.
+5. Internally streams raw LLM responses via `generateRawResponse`.
+6. Converts each raw response to a structured ChatMessage via `convertRawResponseToChatMessage`:
+   - Text responses become assistant messages with text content.
+   - Tool calls become assistant messages with tool metadata, expected in the specified JSON format.
+   - Handles potential malformed JSON from the LLM gracefully (e.g., logs error, returns a system error message).
+7. Yields properly formatted ChatMessage objects to the Orchestrator.
+8. Handles timeouts or client cancellations.
 
 #### Prompt Engineering for Tools
 
-- Includes a clear list of available tools and their parameters in the system prompt
-- Instructs the LLM to output tool calls as JSON blobs: `{ "tool": "name", "arguments": {...} }`
-- Prompts the LLM to maintain a coherent narrative around tool calls
-- Provides error handling guidance to help the LLM respond to tool failures
+- Relies on the `compileSystemPrompt` method to assemble the context.
+- **Crucially includes a host-defined instruction mandating the exact JSON output format for tool calls.**
+- Leverages the specific instructions fetched from each server's `"tool-descriptions"` prompt.
+- Instructs the LLM (via the base prompt) to maintain a coherent narrative around tool calls and handle results naturally.
 
 ### 2.4 MCP Coordinator
 
 #### Responsibility
 
-Manages connections to MCP servers, discovers tools, and handles tool execution requests.
+Manages connections to MCP servers, discovers tools, retrieves server-specific tool usage guidance prompts (or generates fallbacks), and handles tool execution requests. Maintains a unified registry of tools with their metadata, validation schemas, and reliability metrics.
 
 #### Types
 
@@ -285,7 +303,7 @@ interface ServerConfig {
 
 // Tool call request
 interface ToolCallRequest {
-  toolName: string;
+  toolName: string; // Can be qualified (server:tool) or unqualified
   arguments: object;
   requestId: string;
   timeoutMs?: number; // Per-call timeout
@@ -307,17 +325,38 @@ interface ToolCallResponse {
 interface ToolDefinition {
   name: string;
   description: string;
-  parameters: object;
-  serverId: string; // Which server provides this tool
+  parameters: object; // JSON Schema for validation
+  examples?: object[]; // Example valid arguments
 }
 
-// Tool metadata for better management
-interface ToolMetadata {
+// Stored content from server "tool-descriptions" prompts
+interface ServerToolDescriptionPrompts extends Map<string, string> {} // Map<serverId, promptText>
+
+// Comprehensive tool registry entry
+interface ToolRegistryEntry {
+  // Core definition
+  qualifiedName: string; // Format: "{serverId}:{toolName}"
+  definition: ToolDefinition;
+
+  // Server info
   serverId: string;
+  client: object; // The MCP Client instance
   transportType: "stdio" | "http";
-  avgResponseTimeMs?: number; // For monitoring
-  failureCount?: number; // For reliability tracking
-  lastUsed?: number; // For potential cleanup
+
+  // Reliability metrics
+  reliability: {
+    successCount: number;
+    failureCount: number;
+    lastFailure?: number;
+    circuitOpen: boolean;
+  };
+
+  // Performance metrics
+  performance: {
+    avgResponseTimeMs: number;
+    callCount: number;
+    lastUsed: number;
+  };
 }
 
 // Request options
@@ -329,6 +368,35 @@ interface ToolExecutionOptions {
     delayMs: number;
     retryableErrorCodes: number[];
   };
+}
+
+// Specific error types for better error handling
+class ToolNotFoundError extends Error {
+  constructor(toolName: string) {
+    super(`Tool not found: ${toolName}`);
+    this.name = "ToolNotFoundError";
+  }
+}
+
+class ToolValidationError extends Error {
+  constructor(
+    public readonly toolName: string,
+    public readonly validationErrors: any[]
+  ) {
+    super(`Invalid arguments for tool: ${toolName}`);
+    this.name = "ToolValidationError";
+  }
+}
+
+class CircuitOpenError extends Error {
+  constructor(
+    public readonly toolName: string,
+    public readonly failureCount: number,
+    public readonly lastFailure: number
+  ) {
+    super(`Circuit open for tool: ${toolName} after ${failureCount} failures`);
+    this.name = "CircuitOpenError";
+  }
 }
 
 // Error type for tool failures
@@ -344,6 +412,7 @@ class ToolExecutionError extends Error {
     }
   ) {
     super(message);
+    this.name = "ToolExecutionError";
   }
 }
 ```
@@ -351,39 +420,73 @@ class ToolExecutionError extends Error {
 #### Methods
 
 - `constructor(configPath: string)`
-- `initialize(): Promise<void>` - Loads configuration and connects to servers
-- `getAvailableTools(): ToolDefinition[]` - Returns the list of all available tools
-- `executeTool(request: ToolCallRequest, options?: ToolExecutionOptions): Promise<ToolCallResponse>` - Executes a tool
-- `shutdown(): Promise<void>` - Gracefully shuts down all MCP clients
-- `validateToolArguments(toolName: string, args: object): boolean` - Verify args match tool schema
-- `getToolMetadata(toolName: string): ToolMetadata | null` - Get info about a specific tool
+- `async initialize(): Promise<void>` - Loads configuration, connects to servers, discovers tools, fetches "tool-descriptions" prompts (or generates fallback descriptions), and builds tool registry.
+- `getAvailableTools(): ToolDefinition[]` - Returns the list of all available tools.
+- `getToolRegistryEntry(toolName: string): ToolRegistryEntry | null` - Gets full tool info including reliability.
+- `getToolDescriptionPrompt(serverId: string): string | null` - Retrieves the pre-fetched/generated guidance text for a specific server.
+- `resolveToolName(toolName: string): string` - Resolves unqualified to qualified tool names (handles potential conflicts).
+- `async validateToolArguments(toolName: string, args: object): Promise<boolean | { errors: any[] }>` - Validates args against JSON Schema.
+- `async executeTool(request: ToolCallRequest, options?: ToolExecutionOptions): Promise<ToolCallResponse>` - Executes a tool with integrated validation and circuit breaking.
+- `async shutdown(): Promise<void>` - Gracefully shuts down all MCP clients.
 - `abortToolExecution(requestId: string): Promise<boolean>` - Cancel running tool call
-- `reloadToolConfiguration(): Promise<void>` - Refresh tool config without restart
-- `trackToolReliability(toolName: string, success: boolean, error?: Error): void` - Monitor tool reliability
+  // `async reloadToolRegistry(): Promise<void>` - Refresh tool registry without restart (Deferred post-MVP)
+- `recordToolSuccess(toolName: string, executionTimeMs: number): void` - Record successful execution.
+- `recordToolFailure(toolName: string, error: Error): void` - Record failure and update circuit status.
+- `isCircuitOpen(toolName: string): boolean` - Check if circuit breaker is open for tool.
 
 #### Flow
 
-1. On initialization, reads mcp.json to identify MCP servers
-2. Creates an MCP client for each server using the appropriate transport
-3. Calls tools/list on each client to discover available tools
-4. Builds a registry mapping tools to their owning clients
-5. When executeTool is called:
-   - Validates the tool arguments against the schema
-   - Looks up the appropriate client for the requested tool
-   - Constructs a tools/call JSON-RPC request
-   - Sets up timeout handling
-   - Sends the request to the client
-   - Handles response/errors and returns a ToolCallResponse
-   - Tracks tool reliability for potential circuit breaking
+1. On initialization:
+
+   - Loads and validates mcp.json using Zod schema.
+   - Creates MCP clients for each server using appropriate transport and connects them.
+   - Initializes `toolDescriptionPrompts = new Map<string, string>()`.
+   - For each successfully connected client (`serverId`):
+     - Calls `tools/list` to discover available tools, storing the `ToolDefinition`s temporarily.
+     - Attempts to call `prompts/get` with `name: "tool-descriptions"`.
+     - **If successful and response is valid** (single message, user role, text type): Extracts `content.text` and stores it in `toolDescriptionPrompts[serverId]`.
+     - **If fetch fails or response is invalid:**
+       - Logs a warning (e.g., "'tool-descriptions' prompt missing/invalid for server [serverId]. Generating fallback description.").
+       - Retrieves the stored `ToolDefinition`s for this `serverId`.
+       - Calls `generateFallbackToolDescription(serverId, definitions)` to create a fallback string.
+       - Stores the generated fallback string in `toolDescriptionPrompts[serverId]`.
+   - Builds the comprehensive tool registry using qualified names (e.g., "filesystem:search_files"), storing tool definitions and associating them with clients.
+   - Sets up initial reliability metrics for all tools.
+   - Handles and logs potential tool name conflicts between servers.
+
+2. When discovering tools (as part of initialization):
+
+   - Creates qualified names (e.g., "filesystem:search_files").
+   - Stores full tool definitions with JSON Schema.
+   - Handles tools with same name from different servers via qualified names and logs warnings about potential ambiguity if unqualified names are used later.
+
+3. When executing a tool:
+
+   - Resolves tool name (adds server prefix if unqualified, potentially erroring on ambiguity).
+   - Checks circuit breaker status before execution.
+   - Validates arguments against tool's JSON Schema.
+   - Looks up the appropriate client in the registry.
+   - Sets up timeout handling based on tool and request settings.
+   - Executes the tool via the client.
+   - Records success/failure to update reliability metrics.
+   - Returns structured response with result or error.
+
+4. For reliability tracking:
+   - Integrates circuit breaker directly in execution flow.
+   - Decrements failure count on success (recovers gradually).
+   - Opens circuit after threshold failures within time window (thresholds configurable).
+   - Provides clear errors when circuit is open.
+   - Auto-resets circuit after cool-down period (configurable).
 
 #### Error Handling
 
 - Validates mcp.json schema on startup
-- Implements retry logic for transient tool failures
-- Logs detailed diagnostics for tool call failures
+- Validates tool arguments before execution
+- Implements structured retry logic for transient tool failures
+- Tracks and surfaces detailed error information
 - Gracefully handles server disconnections
-- Implements timeouts for unresponsive tools
-- Tracks tool reliability to identify problematic servers
+- Implements tool-specific timeouts
+- Uses circuit breaker to protect against repeatedly failing tools
 
 ### 2.5 Cross-Cutting Concerns
 
@@ -403,7 +506,7 @@ interface Session {
   id: string;
   createdAt: number;
   lastActiveAt: number;
-  connections: string[]; // Connection IDs
+  connectionId: string; // Single connection ID per session
   history: ChatMessage[];
   metadata: object;
 }
@@ -451,75 +554,87 @@ const SYSTEM_MESSAGES = {
   - zod (for validation)
   - dotenv (for environment variables)
   - pino (for logging)
-- Implement all interface and type definitions
-- Create validation schemas using Zod
-- Set up error classes and request context types
-- Set up the session management interface
-- Implement standard system messages
+- Configure structured logger (Pino) for different environments (dev, prod).
+- Implement all interface and type definitions from Section 2.
+- Create validation schemas using Zod (for config, messages, etc.).
+- Implement base error classes (`LLMServiceError`, `ToolExecutionError`, etc.) and `RequestContext` type.
+- Set up the session management interface (`SessionManager`).
+- Implement standard system messages constants.
 
 ### Phase 2: MCP Coordinator Implementation
 
-- Implement configuration loading and validation
-- Create client initialization logic
-- Implement tool discovery
-- Add tool execution and error handling
-- Implement timeout and cancellation logic
-- Add tool validation using schemas from tools/list
-- Build tool reliability tracking
-- Add structured error handling with ToolExecutionError
-- Build unit tests with mocked MCP clients
+- Implement configuration loading (`mcp.json`, `.env`) and validation with Zod.
+- Create client initialization logic for stdio and http transports.
+- Design and implement unified tool registry with qualified names.
+- Implement discovery of tools (`tools/list`) and prompts (`prompts/get` for `"tool-descriptions"`).
+- Implement the fallback prompt generation logic (`generateFallbackToolDescription`) if `"tool-descriptions"` is missing/invalid.
+- Add JSON Schema validation for tool arguments (`validateToolArguments`).
+- Implement integrated circuit breaker for reliability (with configurable parameters).
+- Add tool execution (`executeTool`) with proper error handling.
+- Implement tool performance and reliability metrics collection.
+- Add timeout and cancellation support for tool execution.
+- Build structured error handling with specific error types (`ToolNotFoundError`, etc.).
+- Create comprehensive unit tests using mocked MCP clients/servers.
 
 ### Phase 3: LLM Service Implementation
 
-- Create base LLM service interface
-- Implement Gemini adapter
-- Add token counting and context management
-- Add prompting and tool parsing logic
-- Implement streaming response handling
-- Add timeout and cancellation support
-- Build structured error handling with LLMServiceError
-- Add unit tests with mocked LLM responses
+- Create base LLM service interface (`LLMService`).
+- Implement Gemini adapter conforming to the interface.
+- Add token counting (`estimateTokenCount`) and basic context management helpers.
+- Implement `compileSystemPrompt` logic to assemble prompts from base, host rules, tool definitions, and server guidance (fetched/fallback).
+- Add raw response generation implementation (`generateRawResponse`).
+- Implement `convertRawResponseToChatMessage` including handling of text and valid/malformed tool call JSON.
+- Implement streaming chat message handling via async generators.
+- Add timeout and cancellation support for LLM generation.
+- Build structured error handling with `LLMServiceError`.
+- Add comprehensive unit tests using mocked LLM API responses (text, valid JSON, invalid JSON, errors).
 
 ### Phase 4: Session Management Implementation
 
-- Implement SessionManager interface
-- Add session creation and retrieval
-- Build connection tracking per session
-- Implement session cleanup for stale sessions
-- Add unit tests for session management
+- Implement `SessionManager` interface.
+- Implement session creation and retrieval logic.
+- Build connection tracking per session (mapping `connectionId` to `sessionId`).
+- Implement session cleanup for stale sessions.
+- Explicitly note: MVP uses an in-memory store for sessions (persistence is post-MVP).
+- Add unit tests for session management logic.
 
 ### Phase 5: Conversation Orchestrator Implementation
 
-- Integrate with Session Manager
-- Implement message history tracking
-- Add context window management with pruneHistory
-- Build the main processing loop for user inputs
-- Implement tool call handling
-- Add error recovery and structured logging
-- Implement abort/cancellation handling
-- Add unit tests for orchestration flow
+- Integrate with Session Manager for session state.
+- Implement message history tracking and storage within the `Session` object.
+- Add context window management (`pruneHistory` - initially simple truncation based on token count).
+- Build the main processing loop (`handleInput`) for user inputs.
+- **Fetch necessary data (tool definitions, server prompts/fallbacks) from MCP Coordinator.**
+- **Pass required context (history, tool definitions, server prompts) to LLM Service.**
+- Use LLM Service's `generateChatMessage` to get structured responses (text or tool calls).
+- Implement tool call handling: parse request from `ChatMessage`, delegate to `MCPCoordinator.executeTool`, add result back to history, re-prompt LLM.
+- Integrate error recovery flows (LLM retries, tool errors) and structured logging.
+- Implement abort/cancellation handling for ongoing requests.
+- Add comprehensive unit tests with mocked dependencies (LLM Service, MCP Coordinator, Session Manager) to verify state transitions and flow logic.
 
 ### Phase 6: WebSocket Handler Implementation
 
-- Set up Fastify with WebSocket plugin
-- Implement connection handler
-- Add connection health monitoring (heartbeats)
-- Build message routing logic
-- Implement response streaming
-- Add session tracking for multiple connections
-- Add connection cleanup for stale connections
-- Build integration tests for the WebSocket interface
+- Set up Fastify server with `@fastify/websocket` plugin.
+- Implement connection handler (`handleConnection`) to manage WebSocket lifecycle.
+- Integrate with Session Manager to associate connections with sessions.
+- Add connection health monitoring (heartbeats).
+- Build message routing logic (incoming messages to Orchestrator, outgoing messages from Orchestrator to client via `sendMessage`).
+- Implement response streaming for `text` and `status` messages yielded by the Orchestrator.
+- Add connection cleanup for stale connections (`cleanupStaleConnections`).
+- Build integration tests for the WebSocket interface interacting with a mocked Orchestrator.
 
 ### Phase 7: Integration and E2E Testing
 
-- Connect all components
-- Implement request context propagation
-- Create end-to-end test scenarios
-- Test with real LLM and MCP servers
-- Verify error handling paths
-- Test connection resilience
-- Test tool execution with timeouts
-- Measure performance characteristics
+- Connect all implemented components.
+- Implement and verify request context propagation (e.g., using `AsyncLocalStorage`).
+- Create end-to-end test scenarios covering:
+  - Basic chat.
+  - Tool invocation (successful and failing).
+  - Error handling paths (LLM errors, tool errors, timeouts).
+  - Connection resilience (disconnect/reconnect if supported).
+- Test with real (or near-real) LLM and MCP servers (consider staging environment).
+- Verify circuit breaker behavior.
+- Perform basic performance/load testing to identify obvious bottlenecks (e.g., N concurrent connections).
 
 ## 4. Logging and Observability
 
@@ -568,49 +683,61 @@ const SYSTEM_MESSAGES = {
 
 ### 5.2 Error Recovery Flows
 
+(Note: These flows are primarily coordinated by the Conversation Orchestrator.)
+
 - **LLM Failures**:
-  - Retry up to 3 times with 1-second delay
-  - Fall back to a pre-defined response if all retries fail
-  - Log the failure with prompt and error details
-  - Propagate structured LLMServiceError for analysis
+  - Retry up to 3 times with 1-second delay (configurable).
+  - If all retries fail, send a standard fallback message to the user (e.g., using `SYSTEM_MESSAGES.LLM_ERROR` or a general error message).
+  - Log the failure with prompt and error details.
+  - Propagate structured `LLMServiceError` for analysis.
 - **Tool Execution Failures**:
-  - Retry once for transient errors
-  - Add error information to conversation history
-  - Re-prompt LLM to handle the failure gracefully
-  - Track tool reliability to identify problematic tools
-  - Propagate structured ToolExecutionError for analysis
+  - Retry once for transient errors (or based on `ToolExecutionOptions`).
+  - Add error information to conversation history (as a `system` or `tool` message with error state).
+  - Re-prompt LLM to handle the failure gracefully (LLM Service prompt should guide this).
+  - Use standard feedback (e.g., `SYSTEM_MESSAGES.TOOL_ERROR`) if the LLM cannot recover.
+  - Track tool reliability via MCP Coordinator to identify problematic tools (circuit breaker).
+  - Propagate structured `ToolExecutionError` for analysis.
 - **WebSocket Failures**:
-  - Maintain session state for reconnection
-  - Provide reconnection instructions to the client
-  - Use heartbeats to detect zombie connections
-  - Clean up resources if reconnection times out
+  - Attempt to maintain session state for potential client reconnection (depends on client implementation).
+  - Provide reconnection instructions/status via `connection` messages.
+  - Use heartbeats to detect zombie connections and trigger cleanup.
+  - Clean up server-side resources if reconnection times out.
 - **Context Window Overflow**:
-  - Detect before sending to LLM
-  - Prune history according to strategy
-  - Log token counts for monitoring
+  - Detect before sending to LLM via `estimateTokenCount`.
+  - Prune history according to strategy (e.g., simple truncation for MVP).
+  - Log token counts for monitoring and potential strategy adjustments.
 
 ## 6. Security Considerations
 
 ### 6.1 Input Validation
 
-- Validate all incoming messages with Zod schemas
-- Sanitize user input before passing to LLM
-- Verify tool call arguments match expected schemas
-- Implement timeouts on all external operations
+- Validate all incoming WebSocket messages against Zod schemas.
+- **Input Sanitization (MVP Scope):** Focus on preventing malformed data structures and ensuring type safety. For MVP, complex prompt injection mitigation is out of scope, but basic checks (e.g., unreasonable input length) can be considered.
+- Verify tool call arguments match expected JSON Schemas via MCP Coordinator.
+- Implement timeouts on all external operations (LLM calls, tool executions).
 
 ### 6.2 API Keys and Secrets
 
-- Store all sensitive values in environment variables
-- Never expose API keys to the frontend
-- Log sanitized requests (no credentials)
-- Rotate keys regularly (document process)
+- Store all sensitive values (API keys, etc.) in environment variables (`.env` file, loaded via `dotenv`).
+- Never expose API keys or secrets to the frontend or in client-facing messages.
+- Log sanitized requests (mask or omit credentials/sensitive headers/payload fields).
+- Document the process for key rotation.
 
 ### 6.3 Tool Permission Scope
 
-- Implement basic allowlisting for tools
-- Validate tool arguments to prevent abuse
-- Consider request rate limiting for tools
-- Monitor tool usage patterns for anomalies
+- Implement basic allowlisting/denylisting for tools if necessary (can be configured).
+- Rely heavily on tool argument validation (JSON Schema) via MCP Coordinator to prevent malformed requests.
+- Consider request rate limiting per user/session for expensive or sensitive tools (potentially post-MVP).
+- Monitor tool usage patterns for anomalies (requires logging/metrics).
+
+### 6.4 Dependency Management
+
+- Regularly scan dependencies for known vulnerabilities (e.g., using `npm audit` or equivalent tools like Snyk).
+- Keep dependencies updated.
+
+### 6.5 Rate Limiting
+
+- Consider implementing basic rate limiting on the WebSocket endpoint (e.g., max messages per second per connection) to prevent simple denial-of-service attacks (potentially post-MVP).
 
 ## 7. Deployment and DevOps
 
@@ -693,19 +820,20 @@ const SYSTEM_MESSAGES = {
 sequenceDiagram
     Frontend->>WebSocket Handler: { type: "message", payload: { text: "Search files" } }
     WebSocket Handler->>Conversation Orchestrator: handleInput("Search files")
-    Conversation Orchestrator->>LLM Service: generateResponse([history])
-    LLM Service-->>Conversation Orchestrator: { type: "text", content: "I'll search" }
+    Conversation Orchestrator->>LLM Service: generateChatMessage([history])
+    LLM Service-->>Conversation Orchestrator: { role: "assistant", content: "I'll search", id: "msg1", createdAt: timestamp }
     Conversation Orchestrator-->>WebSocket Handler: { type: "text", payload: { content: "I'll search" } }
     WebSocket Handler-->>Frontend: { type: "text", payload: { content: "I'll search" } }
-    LLM Service-->>Conversation Orchestrator: { type: "tool_call", tool: "search_files", arguments: { query: "files" } }
+    LLM Service-->>Conversation Orchestrator: { role: "assistant", toolName: "search_files", data: { arguments: { query: "files" } }, id: "msg2", createdAt: timestamp }
     Conversation Orchestrator-->>WebSocket Handler: { type: "status", payload: { state: "processing", tool: "search_files" } }
     WebSocket Handler-->>Frontend: { type: "status", payload: { state: "processing", tool: "search_files" } }
     Conversation Orchestrator->>MCP Coordinator: executeTool({ toolName: "search_files", arguments: { query: "files" } })
     MCP Coordinator-->>Conversation Orchestrator: { result: { files: ["file1.txt"] } }
+    Conversation Orchestrator->>Conversation Orchestrator: addMessageToHistory({ role: "tool", toolName: "search_files", data: { files: ["file1.txt"] } })
     Conversation Orchestrator-->>WebSocket Handler: { type: "status", payload: { state: "complete", data: { files: ["file1.txt"] } } }
     WebSocket Handler-->>Frontend: { type: "status", payload: { state: "complete", data: { files: ["file1.txt"] } } }
-    Conversation Orchestrator->>LLM Service: generateResponse([history + tool result])
-    LLM Service-->>Conversation Orchestrator: { type: "text", content: "Found file1.txt" }
+    Conversation Orchestrator->>LLM Service: generateChatMessage([history + tool result])
+    LLM Service-->>Conversation Orchestrator: { role: "assistant", content: "Found file1.txt", id: "msg3", createdAt: timestamp }
     Conversation Orchestrator-->>WebSocket Handler: { type: "text", payload: { content: "Found file1.txt" } }
     WebSocket Handler-->>Frontend: { type: "text", payload: { content: "Found file1.txt" } }
 ```
@@ -769,45 +897,229 @@ MAX_TOKEN_COUNT=8192
 DEFAULT_TOOL_TIMEOUT_MS=5000
 ```
 
-### 10.3 Tool Reliability Circuit Breaker
+### 10.3 Unified Tool Registry and Circuit Breaker
 
-The system implements a simple circuit breaker pattern for unreliable tools:
+The MCP Coordinator maintains a unified tool registry that handles all aspects of tool management:
 
 ```typescript
 // Implementation concept
-class ToolCircuitBreaker {
-  private failures: Record<string, { count: number; lastFailure: number }> = {};
-  private readonly threshold = 5;
-  private readonly resetTimeMs = 60000; // 1 minute
-
-  recordFailure(toolName: string): void {
-    if (!this.failures[toolName]) {
-      this.failures[toolName] = { count: 0, lastFailure: 0 };
+class MCPCoordinator {
+  private toolRegistry = new Map<string, ToolRegistryEntry>();
+  private clients = new Map<string, Client>();
+  private activeExecutions = new Map<
+    string,
+    {
+      abortController: AbortController;
+      timeout: NodeJS.Timeout;
     }
-    this.failures[toolName].count++;
-    this.failures[toolName].lastFailure = Date.now();
+  >();
+
+  private readonly circuitThreshold = 5;
+  private readonly circuitResetTimeMs = 60000; // 1 minute
+
+  async initialize(): Promise<void> {
+    // Load configuration
+    const config = await this.loadConfig();
+
+    // Initialize clients
+    for (const serverConfig of config.servers) {
+      const client = new Client({
+        transport: serverConfig.transport,
+        path:
+          serverConfig.transport === "stdio"
+            ? serverConfig.command
+            : serverConfig.url,
+      });
+
+      await client.connect();
+      this.clients.set(serverConfig.id, client);
+    }
+
+    // Discover and register tools
+    await this.discoverTools();
   }
 
-  recordSuccess(toolName: string): void {
-    if (this.failures[toolName]) {
-      this.failures[toolName].count = Math.max(
-        0,
-        this.failures[toolName].count - 1
+  private async discoverTools(): Promise<void> {
+    for (const [serverId, client] of this.clients.entries()) {
+      try {
+        const tools = await client.listTools();
+
+        for (const tool of tools) {
+          const qualifiedName = `${serverId}:${tool.name}`;
+
+          this.toolRegistry.set(qualifiedName, {
+            qualifiedName,
+            definition: tool,
+            serverId,
+            client,
+            transportType: client.transport,
+            reliability: {
+              successCount: 0,
+              failureCount: 0,
+              circuitOpen: false,
+            },
+            performance: {
+              avgResponseTimeMs: 0,
+              callCount: 0,
+              lastUsed: Date.now(),
+            },
+          });
+        }
+      } catch (error) {
+        // Log error but continue with other servers
+        console.error(
+          `Failed to discover tools for server ${serverId}:`,
+          error
+        );
+      }
+    }
+  }
+
+  resolveToolName(toolName: string): string {
+    // If already qualified, return as is
+    if (toolName.includes(":")) {
+      return toolName;
+    }
+
+    // Find a tool with this unqualified name
+    for (const [qualifiedName, entry] of this.toolRegistry.entries()) {
+      if (qualifiedName.endsWith(`:${toolName}`)) {
+        return qualifiedName;
+      }
+    }
+
+    // If not found, return original (will fail later)
+    return toolName;
+  }
+
+  async executeTool(request: ToolCallRequest): Promise<ToolCallResponse> {
+    const qualifiedName = this.resolveToolName(request.toolName);
+    const entry = this.toolRegistry.get(qualifiedName);
+
+    if (!entry) {
+      throw new ToolNotFoundError(qualifiedName);
+    }
+
+    // Check circuit breaker
+    if (entry.reliability.circuitOpen) {
+      throw new CircuitOpenError(
+        qualifiedName,
+        entry.reliability.failureCount,
+        entry.reliability.lastFailure
       );
     }
-  }
 
-  isOpen(toolName: string): boolean {
-    const failure = this.failures[toolName];
-    if (!failure) return false;
-
-    // Reset if threshold time has passed
-    if (Date.now() - failure.lastFailure > this.resetTimeMs) {
-      failure.count = 0;
-      return false;
+    // Validate arguments
+    const validationResult = await this.validateToolArguments(
+      qualifiedName,
+      request.arguments
+    );
+    if (validationResult !== true) {
+      throw new ToolValidationError(qualifiedName, validationResult.errors);
     }
 
-    return failure.count >= this.threshold;
+    // Setup execution with timeout
+    const abortController = new AbortController();
+    const timeoutMs = request.timeoutMs || 10000; // Default 10s
+
+    const timeout = setTimeout(() => {
+      abortController.abort();
+    }, timeoutMs);
+
+    this.activeExecutions.set(request.requestId, { abortController, timeout });
+
+    try {
+      const startTime = Date.now();
+      const result = await entry.client.callTool(
+        entry.definition.name,
+        request.arguments,
+        { signal: abortController.signal }
+      );
+
+      const executionTimeMs = Date.now() - startTime;
+
+      // Record success
+      this.recordToolSuccess(qualifiedName, executionTimeMs);
+
+      return {
+        toolName: qualifiedName,
+        result,
+        requestId: request.requestId,
+        executionTimeMs,
+      };
+    } catch (error) {
+      // Record failure
+      this.recordToolFailure(qualifiedName, error);
+
+      throw new ToolExecutionError(
+        `Failed to execute tool: ${qualifiedName}`,
+        error,
+        {
+          toolName: qualifiedName,
+          serverId: entry.serverId,
+          requestId: request.requestId,
+          arguments: request.arguments,
+        }
+      );
+    } finally {
+      clearTimeout(timeout);
+      this.activeExecutions.delete(request.requestId);
+    }
+  }
+
+  recordToolSuccess(qualifiedName: string, executionTimeMs: number): void {
+    const entry = this.toolRegistry.get(qualifiedName);
+    if (!entry) return;
+
+    // Update reliability - reduce failure count on success
+    if (entry.reliability.failureCount > 0) {
+      entry.reliability.failureCount--;
+    }
+    entry.reliability.successCount++;
+    entry.reliability.circuitOpen = false;
+
+    // Update performance metrics
+    entry.performance.callCount++;
+    entry.performance.lastUsed = Date.now();
+
+    // Exponential moving average for response time
+    const alpha = 0.2; // Smoothing factor
+    entry.performance.avgResponseTimeMs =
+      alpha * executionTimeMs +
+      (1 - alpha) * (entry.performance.avgResponseTimeMs || executionTimeMs);
+  }
+
+  recordToolFailure(qualifiedName: string, error: Error): void {
+    const entry = this.toolRegistry.get(qualifiedName);
+    if (!entry) return;
+
+    // Update reliability metrics
+    entry.reliability.failureCount++;
+    entry.reliability.lastFailure = Date.now();
+
+    // Check if circuit should open
+    entry.reliability.circuitOpen =
+      entry.reliability.failureCount >= this.circuitThreshold;
+
+    // Update performance metrics
+    entry.performance.callCount++;
+    entry.performance.lastUsed = Date.now();
+  }
+
+  isCircuitOpen(qualifiedName: string): boolean {
+    const entry = this.toolRegistry.get(qualifiedName);
+    if (!entry) return false;
+
+    // Auto-reset circuit after cool-down period
+    if (entry.reliability.circuitOpen && entry.reliability.lastFailure) {
+      const timeSinceLastFailure = Date.now() - entry.reliability.lastFailure;
+      if (timeSinceLastFailure > this.circuitResetTimeMs) {
+        entry.reliability.circuitOpen = false;
+        entry.reliability.failureCount = 0;
+      }
+    }
+
+    return entry.reliability.circuitOpen;
   }
 }
 ```
