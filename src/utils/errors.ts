@@ -1,167 +1,58 @@
-// src/utils/errors.ts
-// Custom error classes for the application
-
-/**
- * Base error class for the application
- */
-export class AppError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-    Error.captureStackTrace(this, this.constructor);
-  }
-}
-
-/**
- * Error class for LLM Service failures
- */
-export class LLMServiceError extends AppError {
-  readonly cause?: Error;
-  readonly context: {
-    model: string;
-    promptTokens?: number;
-    attemptCount: number;
-  };
-
+export class LLMServiceError extends Error {
   constructor(
     message: string,
-    cause?: Error,
-    context?: {
+    public readonly cause: Error,
+    public readonly context: {
       model: string;
       promptTokens?: number;
       attemptCount: number;
-    },
+    }
   ) {
     super(message);
-    this.cause = cause;
-    this.context = context || {
-      model: 'unknown',
-      attemptCount: 0,
-    };
+    this.name = "LLMServiceError";
   }
 }
 
-/**
- * Error class for tool failures
- */
-export class ToolExecutionError extends AppError {
-  readonly cause?: Error;
-  readonly context: {
-    toolName: string;
-    serverId: string;
-    requestId: string;
-    arguments: Record<string, any>;
-  };
-
+export class ToolExecutionError extends Error {
   constructor(
     message: string,
-    cause?: Error,
-    context?: {
+    public readonly cause: Error,
+    public readonly context: {
       toolName: string;
       serverId: string;
       requestId: string;
-      arguments: Record<string, any>;
-    },
+      arguments: object;
+    }
   ) {
     super(message);
-    this.cause = cause;
-    this.context = context || {
-      toolName: 'unknown',
-      serverId: 'unknown',
-      requestId: 'unknown',
-      arguments: {},
-    };
+    this.name = "ToolExecutionError";
   }
 }
 
-/**
- * Error class for tool validation failures
- */
-export class ToolValidationError extends AppError {
-  readonly toolName: string;
-  readonly validationErrors: any[];
-
-  constructor(toolName: string, validationErrors: any[]) {
-    super(`Invalid arguments for tool: ${toolName}`);
-    this.toolName = toolName;
-    this.validationErrors = validationErrors;
-  }
-}
-
-/**
- * Error class for tool not found
- */
-export class ToolNotFoundError extends AppError {
-  readonly toolName: string;
-
+export class ToolNotFoundError extends Error {
   constructor(toolName: string) {
     super(`Tool not found: ${toolName}`);
-    this.toolName = toolName;
+    this.name = "ToolNotFoundError";
   }
 }
 
-/**
- * Error class for circuit breaker open
- */
-export class CircuitOpenError extends AppError {
-  readonly toolName: string;
-  readonly failureCount: number;
-  readonly lastFailure: number;
+export class ToolValidationError extends Error {
+  constructor(
+    public readonly toolName: string,
+    public readonly validationErrors: any[]
+  ) {
+    super(`Invalid arguments for tool: ${toolName}`);
+    this.name = "ToolValidationError";
+  }
+}
 
-  constructor(toolName: string, failureCount: number, lastFailure: number) {
+export class CircuitOpenError extends Error {
+  constructor(
+    public readonly toolName: string,
+    public readonly failureCount: number,
+    public readonly lastFailure: number
+  ) {
     super(`Circuit open for tool: ${toolName} after ${failureCount} failures`);
-    this.toolName = toolName;
-    this.failureCount = failureCount;
-    this.lastFailure = lastFailure;
-  }
-}
-
-/**
- * Error class for configuration errors
- */
-export class ConfigurationError extends AppError {
-  readonly configPath?: string;
-
-  constructor(message: string, configPath?: string) {
-    super(message);
-    this.configPath = configPath;
-  }
-}
-
-/**
- * Error class for session errors
- */
-export class SessionError extends AppError {
-  readonly sessionId?: string;
-
-  constructor(message: string, sessionId?: string) {
-    super(message);
-    this.sessionId = sessionId;
-  }
-}
-
-/**
- * Error class for WebSocket connection issues
- */
-export class WebSocketError extends AppError {
-  readonly connectionId?: string;
-
-  constructor(message: string, connectionId?: string) {
-    super(message);
-    this.connectionId = connectionId;
-  }
-}
-
-/**
- * Error class for timeouts
- */
-export class TimeoutError extends AppError {
-  readonly operationName: string;
-  readonly timeoutMs: number;
-
-  constructor(operationName: string, timeoutMs: number) {
-    super(`Operation '${operationName}' timed out after ${timeoutMs}ms`);
-    this.operationName = operationName;
-    this.timeoutMs = timeoutMs;
+    this.name = "CircuitOpenError";
   }
 }
