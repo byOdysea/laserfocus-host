@@ -153,6 +153,8 @@ class ConversationOrchestrator:
         user_message = ChatMessage(role='user', content=text, data=None, tool_name=None)
         self._add_message(session_id, user_message)
 
+        handled_successfully = False  # Flag to track if we completed successfully
+
         # --- Start LLM Interaction Loop ---
         # This loop allows re-prompting after a tool call
         while True:
@@ -240,6 +242,7 @@ class ConversationOrchestrator:
                          )
                          self._add_message(session_id, final_assistant_message)
                     print(f"Orchestrator ({session_id}): LLM turn finished successfully.")
+                    handled_successfully = True  # Set success flag
                     break # Exit the 'while True' loop, turn is complete
 
             except Exception as e:
@@ -250,7 +253,8 @@ class ConversationOrchestrator:
                 # self._add_message(session_id, ChatMessage(role='system', content=f"Orchestrator Error: {e}", data=None))
                 break # Exit the 'while True' loop on unhandled exception
 
-            # --- After the loop has successfully completed ---
-            # Yield the EndOfTurn signal only if we exited the loop normally
-            yield EndOfTurn()
-            print(f"Orchestrator ({session_id}): Yielded EndOfTurn signal.")
+        # --- ALWAYS yield EndOfTurn at the end, outside the main try block ---
+        # This ensures we ALWAYS signal the end of a turn, regardless of how we got here
+        print(f"Orchestrator ({session_id}): Turn completed, yielding EndOfTurn signal.")
+        yield EndOfTurn()
+        print(f"Orchestrator ({session_id}): EndOfTurn signal yielded. handled_successfully={handled_successfully}")
