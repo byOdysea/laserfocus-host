@@ -47,8 +47,13 @@ class ErrorInfo:
     code: Optional[int] = None
     details: Optional[Any] = None
 
+@dataclass
+class EndOfTurn:
+    """Signals the successful completion of the LLM's response turn."""
+    pass # No content needed, the type itself is the signal
+
 # Union type for the parts yielded by the service
-LLMResponsePart = Union[TextChunk, ToolCallIntent, ErrorInfo]
+LLMResponsePart = Union[TextChunk, ToolCallIntent, ErrorInfo, EndOfTurn]
 
 # --- Core Data Structures ---
 

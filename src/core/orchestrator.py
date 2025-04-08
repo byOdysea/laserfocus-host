@@ -18,7 +18,8 @@ from .llm_service import (
     ToolCallIntent,
     ErrorInfo,
     ToolDefinition, # We'll need to construct this
-    LLMConfig
+    LLMConfig,
+    EndOfTurn
 )
 from .mcp_coordinator import MCPCoordinator, ToolRegistryEntry
 
@@ -238,7 +239,7 @@ class ConversationOrchestrator:
                               tool_name=None
                          )
                          self._add_message(session_id, final_assistant_message)
-                    print(f"Orchestrator ({session_id}): LLM turn finished.")
+                    print(f"Orchestrator ({session_id}): LLM turn finished successfully.")
                     break # Exit the 'while True' loop, turn is complete
 
             except Exception as e:
@@ -248,3 +249,8 @@ class ConversationOrchestrator:
                 # Optionally add system error message?
                 # self._add_message(session_id, ChatMessage(role='system', content=f"Orchestrator Error: {e}", data=None))
                 break # Exit the 'while True' loop on unhandled exception
+
+            # --- After the loop has successfully completed ---
+            # Yield the EndOfTurn signal only if we exited the loop normally
+            yield EndOfTurn()
+            print(f"Orchestrator ({session_id}): Yielded EndOfTurn signal.")
