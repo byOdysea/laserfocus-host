@@ -1,142 +1,77 @@
-# LaserFocus Host
+# Laserfocus Host
 
-A Model Context Protocol (MCP) Host Server that enables real-time chat with an LLM, seamlessly integrating external tools.
+This project implements the backend host server for the Laserfocus system. It provides a WebSocket interface for clients to interact with a Large Language Model (LLM - currently Google Gemini) that is augmented with external tools managed via the Model Context Protocol (MCP).
 
-## Features
+## Prerequisites
 
-- Real-time chat via WebSockets
-- Integration with LLMs (initially Gemini)
-- Tool discovery and execution via MCP servers
-- Robust error handling and circuit breakers
-- Streaming responses
+- Python 3.10+
+- [uv](https://github.com/astral-sh/uv) (recommended for environment and package management)
+- An environment variable `GEMINI_API_KEY` set with a valid Google Gemini API key (see Setup).
 
-## Getting Started
+## Setup
 
-### Prerequisites
+1.  **Clone the repository:**
 
-- Node.js 18+
-- npm 9+
+    ```bash
+    git clone <repository-url>
+    cd laserfocus-host
+    ```
 
-### Installation
+2.  **Create a virtual environment and install dependencies:**
 
-1. Clone the repository
+    ```bash
+    # Create the environment
+    uv venv
 
-   ```bash
-   git clone https://github.com/byOdysea/laserfocus-host.git
-   cd laserfocus-host
-   ```
+    # Activate the environment (example for bash/zsh)
+    source .venv/bin/activate
 
-2. Install dependencies
+    # Install dependencies from uv.lock
+    uv sync
+    ```
 
-   ```bash
-   npm install
-   ```
+3.  **Configure environment variables:**
 
-3. Configure environment variables
+    - Copy the example environment file:
+      ```bash
+      cp .env.example .env
+      ```
+    - Edit the `.env` file and add your `GEMINI_API_KEY`.
 
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys and configuration
-   ```
+4.  **Configure MCP Servers:**
+    - The `mcp.json` file defines the external tool servers. Review this file and ensure the paths and commands are correct for your environment (especially for `filesystem` and `git` servers).
 
-4. Configure MCP servers in `mcp.json`
+## Running the Application
 
-   ```json
-   {
-     "servers": {
-       "filesystem": {
-         "id": "filesystem",
-         "type": "local",
-         "transport": "stdio",
-         "command": "npx",
-         "args": ["@modelcontextprotocol/server-filesystem"],
-         "timeoutMs": 10000
-       }
-     }
-   }
-   ```
+1.  **Start the Host Server:**
 
-5. Build the project
+    - Ensure your virtual environment is activated (`source .venv/bin/activate`).
+    - Run the main application:
+      ```bash
+      python src/main.py
+      ```
+    - The server will start and log initialization steps, including connecting to MCP servers.
 
-   ```bash
-   npm run build
-   ```
+2.  **Run the CLI Client:**
+    - Open a **new terminal window**.
+    - Activate the virtual environment: `source .venv/bin/activate`.
+    - Run the command-line client:
+      ```bash
+      python src/cli_client.py
+      ```
+    - You should see a "Connected!" message and a `>>>` prompt. You can now interact with the LLM. Type `quit` to exit the client.
 
-6. Start the server
-   ```bash
-   npm start
-   ```
+## Project Structure Overview
 
-For development with auto-reload:
-
-```bash
-npm run dev
-```
-
-## Architecture
-
-The MCP Host Server follows a modular architecture:
-
-- **WebSocket Handler**: Manages bidirectional communication with frontend clients
-- **Conversation Orchestrator**: Controls the chat flow and coordinates components
-- **LLM Service**: Abstracts interactions with LLM providers
-- **MCP Coordinator**: Manages connections to MCP servers and executes tools
-
-## Configuration
-
-### Environment Variables
-
-- `GEMINI_API_KEY`: API key for Google Gemini
-- `PORT`: Server port (default: 3000)
-- `HOST`: Server host (default: localhost)
-- `LOG_LEVEL`: Logging level (default: info)
-- `MCP_JSON_PATH`: Path to MCP configuration file (default: ./mcp.json)
-- `MAX_TOKEN_COUNT`: Maximum token count for LLM context (default: 8192)
-- `DEFAULT_TOOL_TIMEOUT_MS`: Default timeout for tool execution (default: 5000)
-
-### MCP Server Configuration
-
-The `mcp.json` file defines the MCP servers to connect to. Each server can use either `stdio` or `http` transport.
-
-## API
-
-### WebSocket Protocol
-
-Connect to `/ws` endpoint. Messages follow these formats:
-
-#### Client to Server
-
-```json
-{
-  "type": "message",
-  "payload": {
-    "text": "Search for files containing 'example'"
-  }
-}
-```
-
-#### Server to Client
-
-```json
-{
-  "type": "text",
-  "payload": {
-    "content": "I'll search for files containing 'example'"
-  }
-}
-```
-
-```json
-{
-  "type": "status",
-  "payload": {
-    "state": "processing",
-    "tool": "search_files",
-    "message": "Searching for files..."
-  }
-}
-```
-
-## License
-
-This project is licensed under the ISC License.
+- **Application Setup (`src/main.py`)**: Main application entry point. Initializes components and starts the server.
+- **CLI Client (`src/cli_client.py`)**: A simple command-line client for interacting with the server.
+- **Core Logic (`src/core/`)**: Contains the main business logic modules:
+  - **Conversation Orchestrator (`orchestrator.py`)**: Manages conversation flow, history, and coordinates LLM/tool interactions.
+  - **LLM Service (`llm_service.py`)**: Handles LLM communication logic, including prompt formatting and response parsing.
+  - **LLM Adapter (`gemini_adapter.py`)**: Specific implementation for interacting with the Google Gemini API.
+  - **MCP Coordinator (`mcp_coordinator.py`)**: Manages connections to external tool servers defined in `mcp.json`.
+- **Handlers (`src/handlers/`)**: Contains network handlers.
+  - **WebSocket Handler (`websocket_handler.py`)**: Manages WebSocket connections and message routing.
+- **MCP Configuration (`mcp.json`)**: Configuration file defining the MCP tool servers.
+- **Environment Configuration (`.env` / `.env.example`)**: Environment variable configuration (API keys, etc.).
+- **Architecture Overview (`ARCHITECTURE.md`)**: A high-level overview of the system architecture and data flow.

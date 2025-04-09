@@ -7,10 +7,51 @@
       "type": "local",
       "transport": "stdio",
       "command": "npx",
-      "args": ["@modelcontextprotocol/server-memory"],
-      "env": {
-        "MEMORY_FILE_PATH": "./memory.json"
-      }
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "sequential-thinking": {
+      "id": "sequential-thinking",
+      "name": "Sequential Thinking Server",
+      "description": "Provides sequential thinking using a local file.",
+      "type": "local",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "filesystem": {
+      "id": "filesystem",
+      "name": "Filesystem Server",
+      "description": "Provides filesystem access using a local file.",
+      "type": "local",
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/axantillon/Downloads"
+      ]
+    },
+    "git": {
+      "id": "git",
+      "name": "Git Server",
+      "description": "Provides git access using a local file.",
+      "type": "local",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-server-git",
+        "--repository",
+        "/Users/axantillon/repos/odysea/laserfocus-host"
+      ]
+    },
+    "puppeteer": {
+      "id": "puppeteer",
+      "name": "Puppeteer Server",
+      "description": "Provides puppeteer access using a local file.",
+      "type": "local",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
     }
   }
 }

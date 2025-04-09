@@ -1,0 +1,16 @@
+[project]
+name = "laserfocus-host"
+version = "0.1.0"
+description = "MCP Host Server implementation in Python"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi", # Web framework with WebSocket support
+    "uvicorn", # ASGI server for FastAPI
+    "websockets", # WebSocket protocol implementation
+    "pydantic", # Data validation
+    "python-dotenv", # Environment variable management
+    "google-genai", # Gemini AI SDK
+    "mcp[cli]>=1.6.0",
+    "async-timeout>=5.0.1",
+    "google-api-core>=2.24.2",
+]
