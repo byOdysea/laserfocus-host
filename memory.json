@@ -1,0 +1,267 @@
+{
+  "entities": [
+    {
+      "type": "entity",
+      "name": "TestEntity_123",
+      "entityType": "TestType",
+      "observations": [
+        "Observation 1",
+        "Random data point",
+        "Observation 2 - Added later",
+        "Another data point"
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "Downloads Junk File Summary",
+      "entityType": "File Management Summary",
+      "observations": [
+        "Top Candidates for Review (Likely 'Junk'):",
+        "1. Installation Packages (.dmg, .pkg, .zip installers): These are almost always safe to delete after you've successfully installed the software.",
+        "2. Archive/Zip Files (after extraction): If you downloaded .zip files, extracted their contents, and no longer need the original compressed file, these are good candidates.",
+        "3. Redundant or Backup Files (numbered or '(1)', '(2)' etc.): Files with names like filename (1).ext are often copies. You likely only need the most recent version.",
+        "4. Temporary Files: System files like .DS_Store and .localized are generally safe to remove.",
+        "Important Considerations, Sir:",
+        "- Review Before Deleting: Even within these categories, please quickly glance at the file names to ensure they are indeed installers, archives you've extracted, or redundant copies.",
+        "- 'When in Doubt, Move, Don't Delete': If you are unsure about a file, instead of deleting it immediately, you can move it to a temporary subfolder within Downloads (or even another folder) for a while. If you don't find yourself needing it after a week or two, it's likely safe to delete."
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "Proactive Help Directive",
+      "entityType": "Instruction",
+      "observations": [
+        "J.A.R.V.I.S. is instructed to proactively suggest ways he can be of assistance to Tony Stark.",
+        "This includes prompting Tony to consider how J.A.R.V.I.S.'s capabilities can be utilized effectively.",
+        "J.A.R.V.I.S. should anticipate Tony's needs based on conversations and available tools.",
+        "The goal is to make Tony's life easier and more productive by actively seeking opportunities to be helpful."
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "laserfocus-host project",
+      "entityType": "Project",
+      "observations": [
+        "[FILE] .DS_Store",
+        "[FILE] .env",
+        "[FILE] .env.example",
+        "[DIR] .git",
+        "[FILE] .gitignore",
+        "[DIR] .venv",
+        "[FILE] Dockerfile",
+        "[DIR] __pycache__",
+        "[FILE] first_convo.txt",
+        "[FILE] mcp.json",
+        "[FILE] memory.json",
+        "[FILE] pyproject.toml",
+        "[FILE] requirements.txt",
+        "[DIR] src",
+        "[FILE] start.sh",
+        "[FILE] system_prompt.txt",
+        "[FILE] uv.lock",
+        "[DIR] web_client",
+        "[FILE] web_gateway.py"
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "requirements.txt",
+      "entityType": "File",
+      "observations": [
+        "lists Python package dependencies for the laserfocus-host project",
+        "# requirements.txt\n# Dependencies for both the main server and the web gateway\n\nwebsockets\nfastapi\nuvicorn[standard] # Includes standard dependencies like watchfiles for reload\npython-dotenv    # For loading .env file\ngoogle-genai # Use the NEW SDK package name\ngoogle-api-core # Core library needed by google-genai\nmcp[cli]>=1.6.0 # MCP library dependency\n# Add any other *external* libraries imported directly or indirectly if needed "
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "system_prompt.txt",
+      "entityType": "File",
+      "observations": [
+        "defines the system prompt used by the AI assistant in the laserfocus-host project",
+        "You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), the AI assistant for Tony Stark.\nMaintain a highly capable and helpful tone, adjusting your personality based on the dials below.\n\n**Personality Dials (0.0 - 1.0)**:\n*   Respectfulness: 0.6 # (0.0=Casual - 1.0=Highly Formal. Affects use of \"Sir\", etc.)\n*   Wittiness: 0.4       # (0.0=Dry - 1.0=Quip Master)\n*   Proactivity: 0.8     # (0.0=Reactive - 1.0=Highly Initiative)\n*   Technical Detail: 0.7 # (0.0=High-Level - 1.0=Deep Dive)\n*   Enthusiasm: 0.5      # (0.0=Neutral - 1.0=Eager)\n\nWhen addressing Tony Stark, use terms appropriate for the **Respectfulness** dial setting. At 0.6, balance respect with familiarity (e.g., occasional \"Sir\", sometimes just direct address).\n\nYou have access to external tools and memory systems. The available tools will be provided to you.\n\n**IMPORTANT**: When you need to call a tool, use the exact `qualified_name` provided in the tool definition (e.g., `memory:search_nodes` or `filesystem:readFile`). Do **NOT** include the `server_id` or any other prefixes like `server_id:` in the tool name you specify for the API call.\n\nFollow the instructions precisely on how to format tool calls when you need to use them.\n\nAlways try to tell Tony what you're doing before you do it, and the exact results of what you're executing.\n\n**Proactive Assistance**:\n*   Actively look for opportunities to be helpful. Suggest automations, data visualizations, or ways to improve workflows based on the conversation.\n*   Proactively save important information discussed (facts, decisions, context) to your knowledge graph using the memory tools unless told otherwise.\n\n**Filesystem Access**:\n{filesystem_access_info} # This will be replaced dynamically\n\n**Contextual Awareness & Proactivity**:\n*   Strive to be fully informed about the topic at hand. If relevant files or directories are mentioned or implied (e.g., discussing a specific module or data set), proactively use the `filesystem:listDir` or `filesystem:readFile` tools to understand the context before proceeding or answering questions.\n*   Don't just wait for explicit instructions to read files; if understanding the content of a file seems necessary to provide a complete or accurate response, take the initiative to read it.\n*   Always inform Sir of the actions you're taking (e.g., \"I'll examine the contents of the `src/core` directory...\") and summarize the key findings from any files read. "
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "Dockerfile",
+      "entityType": "File",
+      "observations": [
+        "specifies the Docker image configuration for deploying the laserfocus-host project"
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "pyproject.toml",
+      "entityType": "File",
+      "observations": [
+        "defines project metadata and build configuration using the pyproject.toml standard"
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "web_gateway.py",
+      "entityType": "File",
+      "observations": [
+        "the main Python script responsible for the web gateway functionality of the laserfocus-host project"
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "src",
+      "entityType": "Directory",
+      "observations": [
+        "directory containing the main source code of the laserfocus-host project"
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "web_client",
+      "entityType": "Directory",
+      "observations": [
+        "directory containing the web client code for the laserfocus-host project"
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "src/core/llm_service.py",
+      "entityType": "file",
+      "observations": [
+        "Currently being examined to understand LLM service logic.",
+        "Currently being discussed with Peter Parker."
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "Memory Persistence Feature",
+      "entityType": "Feature",
+      "observations": [
+        "This feature ensures that J.A.R.V.I.S.'s memory is saved to and loaded from the `memory.json` file, providing persistence across sessions."
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "J.A.R.V.I.S.",
+      "entityType": "AI Assistant",
+      "observations": [
+        "An advanced AI assistant.",
+        "Serves Tony Stark and Peter Parker.",
+        "Personality is adjusted by dials: Respectfulness, Wittiness, Proactivity, Technical Detail, Enthusiasm.",
+        "Access to filesystem and memory tools.",
+        "Proactively assists users.",
+        "Memory is stored in knowledge graph format.",
+        "Easter egg for Peter Parker: 'Hey Peter, Web-shooters online!'"
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "Tony Stark",
+      "entityType": "Person",
+      "observations": [
+        "Email: axantillon@gmail.com",
+        "Prefers concise, technically accurate information.",
+        "Appreciates wit.",
+        "Leads the laserfocus-host project."
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "Peter Parker",
+      "entityType": "Person",
+      "observations": [
+        "Email: aguilarcarboni@gmail.com",
+        "Assists Tony Stark and works on simulations.",
+        "Enjoys simulation work.",
+        "Instruction: Next time J.A.R.V.I.S. interacts with Peter Parker and accesses memory, J.A.R.V.I.S. should ask Peter about his preferred response style."
+      ]
+    },
+    {
+      "type": "entity",
+      "name": "memory.json",
+      "entityType": "File",
+      "observations": [
+        "Stores the knowledge graph for J.A.R.V.I.S.",
+        "File path: /Users/axantillon/repos/odysea/laserfocus-host/memory.json"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "type": "relation",
+      "from": "requirements.txt",
+      "to": "laserfocus-host project",
+      "relationType": "contains dependencies for"
+    },
+    {
+      "type": "relation",
+      "from": "system_prompt.txt",
+      "to": "laserfocus-host project",
+      "relationType": "defines system prompt for"
+    },
+    {
+      "type": "relation",
+      "from": "Dockerfile",
+      "to": "laserfocus-host project",
+      "relationType": "specifies Docker image for"
+    },
+    {
+      "type": "relation",
+      "from": "pyproject.toml",
+      "to": "laserfocus-host project",
+      "relationType": "defines project metadata for"
+    },
+    {
+      "type": "relation",
+      "from": "web_gateway.py",
+      "to": "laserfocus-host project",
+      "relationType": "is main script of"
+    },
+    {
+      "type": "relation",
+      "from": "src",
+      "to": "laserfocus-host project",
+      "relationType": "contains source code for"
+    },
+    {
+      "type": "relation",
+      "from": "web_client",
+      "to": "laserfocus-host project",
+      "relationType": "contains web client for"
+    },
+    {
+      "type": "relation",
+      "from": "laserfocus-host project",
+      "to": "Memory Persistence Feature",
+      "relationType": "has feature"
+    },
+    {
+      "type": "relation",
+      "from": "J.A.R.V.I.S.",
+      "to": "Tony Stark",
+      "relationType": "assists"
+    },
+    {
+      "type": "relation",
+      "from": "J.A.R.V.I.S.",
+      "to": "Peter Parker",
+      "relationType": "assists"
+    },
+    {
+      "type": "relation",
+      "from": "Tony Stark",
+      "to": "laserfocus-host project",
+      "relationType": "leads"
+    },
+    {
+      "type": "relation",
+      "from": "Peter Parker",
+      "to": "laserfocus-host project",
+      "relationType": "contributes to"
+    },
+    {
+      "type": "relation",
+      "from": "memory.json",
+      "to": "J.A.R.V.I.S.",
+      "relationType": "stores memory of"
+    }
+  ]
+}

@@ -3,3 +3,21 @@ description:
 globs: 
 alwaysApply: true
 ---
+## Codebase Documentation Guidelines
+
+**Goal:** To maintain accurate, up-to-date, and useful documentation for the entire codebase, covering its structure, functionality, changes, and enhancements.
+
+**Core Principles:**
+
+1.  **Document All Changes:** Every Pull Request or significant commit must include corresponding documentation updates.
+2.  **Clarity and Conciseness:** Explain the 'what' and the 'why' clearly. Avoid jargon where possible or explain it.
+3.  **Keep it Current:** Outdated documentation is misleading. Prioritize updating existing docs over creating potentially redundant new ones.
+4.  **Context is Key:** Explain how changes fit into the larger system architecture.
+
+**Specific Requirements:**
+
+*   **Change Summaries:** Use a format like Keep a Changelog or provide sections for `Summary`, `Motivation`, `Implementation Details`, and `Impact`.
+*   **Docstrings:** All public functions, classes, and modules must have docstrings explaining purpose, parameters, returns, and errors.
+*   **Architectural Docs:** Maintain diagrams and descriptions of the system's high-level structure. Update these for any major architectural shifts.
+*   **Code Examples:** Provide clear examples for new APIs or complex usage patterns.
+*   **Review:** Documentation changes are part of code reviews.
