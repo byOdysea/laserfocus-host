@@ -13,4 +13,5 @@ dependencies = [
     "mcp[cli]>=1.6.0",
     "async-timeout>=5.0.1",
     "google-api-core>=2.24.2",
+    "dotenv>=0.9.9",
 ]
