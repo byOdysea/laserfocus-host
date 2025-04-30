@@ -52,6 +52,54 @@
       "transport": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "cli-mcp-server": {
+      "id": "cli-mcp-server",
+      "name": "CLI MCP Server",
+      "description": "Provides CLI access through MCP.",
+      "type": "local",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": [
+        "cli-mcp-server"
+      ],
+      "env": {
+        "ALLOWED_DIR": "/Users/axantillon/repos/odysea/laserfocus-host",
+        "ALLOWED_COMMANDS": "ls,cat,pwd,echo,cd,find,grep",
+        "ALLOWED_FLAGS": "-l,-a,--help,--version",
+        "MAX_COMMAND_LENGTH": "1024",
+        "COMMAND_TIMEOUT": "30",
+        "ALLOW_SHELL_OPERATORS": "false"
+      }
+    },
+    "gmail": {
+      "id": "gmail",
+      "name": "Gmail Server",
+      "description": "Provides Gmail access using a local file.",
+      "type": "local",
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "@gongrzhe/server-gmail-autoauth-mcp"
+      ]
+    },
+    "gdrive": {
+      "id": "gdrive",
+      "name": "GDrive Server",
+      "description": "Provides GDrive access using a local file.",
+      "type": "local",
+      "transport": "stdio",
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "mcp-gdrive:/gdrive-server", "-e", "GDRIVE_CREDENTIALS_PATH=/gdrive-server/credentials.json", "mcp/gdrive"]
+    },
+    "everything": {
+      "id": "everything",
+      "name": "Everything Server",
+      "description": "Provides tools, resources and prompt to test MCP",
+      "type": "local",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything"]
     }
   }
 }
