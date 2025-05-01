@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "laserfocus-host"
+version = "0.1.0"
+description = "Laserfocus Host Server"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "langgraph",
+    "langchain-google-genai",
+    "langgraph-cli[inmem]>=0.2.7",
+    "langchain-mcp-adapters>=0.0.9",
+    "aiofiles",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    # Add development tools like linters, formatters here
+]
