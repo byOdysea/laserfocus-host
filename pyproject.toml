@@ -20,6 +20,7 @@ dependencies = [
     "langgraph-cli[inmem]>=0.2.7",
     "langchain-mcp-adapters>=0.0.9",
     "aiofiles",
+    "pydantic>=2.11.4",
 ]
 
 [project.optional-dependencies]

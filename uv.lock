@@ -729,6 +729,7 @@ dependencies = [
     { name = "langchain-mcp-adapters" },
     { name = "langgraph" },
     { name = "langgraph-cli", extra = ["inmem"] },
+    { name = "pydantic" },
 ]
 
 [package.optional-dependencies]
@@ -743,6 +744,7 @@ requires-dist = [
     { name = "langchain-mcp-adapters", specifier = ">=0.0.9" },
     { name = "langgraph" },
     { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.2.7" },
+    { name = "pydantic", specifier = ">=2.11.4" },
     { name = "pytest", marker = "extra == 'dev'" },
 ]
 provides-extras = ["dev"]

@@ -8,15 +8,6 @@
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-memory"]
   },
-  "sequential-thinking": {
-    "id": "sequential-thinking",
-    "name": "Sequential Thinking Server",
-    "description": "Provides sequential thinking using a local file.",
-    "type": "local",
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
-  },
   "filesystem": {
     "id": "filesystem",
     "name": "Filesystem Server",
@@ -30,19 +21,6 @@
       "/Users/axantillon/repos/odysea/laserfocus-host"
     ]
   },
-  "git": {
-    "id": "git",
-    "name": "Git Server",
-    "description": "Provides git access using a local file.",
-    "type": "local",
-    "transport": "stdio",
-    "command": "uvx",
-    "args": [
-      "mcp-server-git",
-      "--repository",
-      "/Users/axantillon/repos/odysea/laserfocus-host"
-    ]
-  },
   "puppeteer": {
     "id": "puppeteer",
     "name": "Puppeteer Server",
@@ -51,25 +29,6 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
-  },
-  "cli-mcp-server": {
-    "id": "cli-mcp-server",
-    "name": "CLI MCP Server",
-    "description": "Provides CLI access through MCP.",
-    "type": "local",
-    "transport": "stdio",
-    "command": "uvx",
-    "args": [
-      "cli-mcp-server"
-    ],
-    "env": {
-      "ALLOWED_DIR": "/Users/axantillon/repos/odysea/laserfocus-host",
-      "ALLOWED_COMMANDS": "ls,cat,pwd,echo,cd,find,grep",
-      "ALLOWED_FLAGS": "-l,-a,--help,--version",
-      "MAX_COMMAND_LENGTH": "1024",
-      "COMMAND_TIMEOUT": "30",
-      "ALLOW_SHELL_OPERATORS": "false"
-    }
   },
   "everything": {
     "id": "everything",
