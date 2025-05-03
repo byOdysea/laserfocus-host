@@ -77,3 +77,6 @@ htmlcov/
 
 # Logs
 *.log
+
+# LangGraph
+.langgraph_api
