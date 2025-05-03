@@ -17,27 +17,28 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START
 import uuid
 from pydantic.v1 import BaseModel, Field
+from operator import add
 
-# Define the structure for an element on the canvas
-class CanvasElement(TypedDict):
-    id: str                     # Unique identifier for the element instance
-    component_name: str         # Name of the React component to render (e.g., 'WeatherDisplay')
+# Define the structure for a widget on the canvas
+class CanvasWidget(TypedDict):
+    id: str                     # Unique identifier for the widget instance
+    widget_name: str            # Name of the React widget to render (e.g., 'WeatherDisplay')
     x: int                      # Top-left x coordinate
     y: int                      # Top-left y coordinate
-    width: int                  # Element width
-    height: int                 # Element height
-    props: Dict[str, Any]       # Dictionary of props to pass to the React component
+    width: int                  # Widget width
+    height: int                 # Widget height
+    props: Dict[str, Any]       # Dictionary of props to pass to the React widget
 
 # Define the structured output for the Canvas LLM
 class CanvasUpdateDecision(BaseModel):
-    """Decision on whether and how to update the canvas with a React component."""
-    should_add_element: bool = Field(description="Set to true if a new React component instance should be added to the canvas based on the context.")
-    component_name: Optional[str] = Field(None, description="Name of the React component to add (e.g., 'WeatherDisplay'). Required if should_add_element is true.")
+    """Decision on whether and how to update the canvas with a React widget."""
+    should_add_element: bool = Field(description="Set to true if a new React widget instance should be added to the canvas based on the context.")
+    widget_name: Optional[str] = Field(None, description="Name of the React widget to add (e.g., 'WeatherDisplay'). Required if should_add_element is true.")
     x: Optional[int] = Field(None, description="Top-left x coordinate. Required if should_add_element is true.")
     y: Optional[int] = Field(None, description="Top-left y coordinate. Required if should_add_element is true.")
     width: Optional[int] = Field(None, description="Element width. Required if should_add_element is true.")
     height: Optional[int] = Field(None, description="Element height. Required if should_add_element is true.")
-    props: Optional[Dict[str, Any]] = Field(None, description="Dictionary of props and their values to pass to the React component (e.g., {'temperature': 75, 'unit': 'F'}). Required if should_add_element is true.")
+    props: Optional[Dict[str, Any]] = Field(None, description="Dictionary of props and their values to pass to the React widget (e.g., {'temperature': 75, 'unit': 'F'}). Required if should_add_element is true.")
 
 class AgentState(TypedDict):
     """The state of the agent."""
@@ -46,7 +47,7 @@ class AgentState(TypedDict):
     # Add canvas state
     canvas_width: int
     canvas_height: int
-    canvas_elements: List[CanvasElement]
+    canvas_widgets: Annotated[List[CanvasWidget], add]
 
 model = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
@@ -142,28 +143,28 @@ def update_canvas_node(state: AgentState) -> dict:
 
     # Construct prompt for Canvas LLM
     canvas_prompt = f"""
-        You are a UI layout assistant for a React application. Your goal is to decide if information from a tool call should be displayed on a canvas by adding a **new instance** of a predefined React component.
+        You are a UI layout assistant for a React application. Your goal is to decide if information from a tool call should be displayed on a canvas by adding a **new instance** of a predefined React widget.
 
         Canvas Dimensions: {state['canvas_width']}x{state['canvas_height']}
-        Current Canvas Elements (for layout reference): {json.dumps(state['canvas_elements'])}
+        Current Canvas Widgets (for layout reference): {json.dumps(state['canvas_widgets'])}
         Result from the last tool call: {last_message.content}
         Last few messages in the conversation: {state['messages'][-5:]} 
 
-        Available React Components:
+        Available React Widgets:
         1.  **WeatherDisplay**: Shows weather information.
             - Props:
                 - `location` (string): The city name.
                 - `temperature` (integer): The temperature value.
                 - `unit` (string): Temperature unit ('C' or 'F').
-                - `description` (string): Brief weather description.
+                - `description` (string): Brief weather description based on the temperature and weather code. 
 
         Task:
-        Based ONLY on the tool result context and the current canvas state, decide if a new visual element (a React component instance) should be added.
-        - If yes, determine the 'component_name' (must be one of the Available React Components), its 'x', 'y', 'width', 'height'.
-        - Extract the relevant data from the tool result and construct the 'props' dictionary. The props MUST match the definition for the chosen component.
+        Based ONLY on the tool result context and the current canvas state, decide if a new visual element (a React widget instance) should be added.
+        - If yes, determine the 'widget_name' (must be one of the Available React Widgets), its 'x', 'y', 'width', 'height'.
+        - Extract the relevant data from the tool result and construct the 'props' dictionary. The props MUST match the definition for the chosen widget.
         - **VERY IMPORTANT**: The 'props' field in your final output MUST be a valid JSON dictionary object, not a string. For example, if the tool result is `{{"location": "London", "temperature": 12, "unit": "C", "description": "Cloudy"}}`, the correct value for the 'props' field is `{{"location": "London", "temperature": 12, "unit": "C", "description": "Cloudy"}}`. Do NOT output it like this: `"props": "{{\\"location\\": \\"London\\", ...}}"`
-        - Choose coordinates and dimensions carefully to fit within the canvas ({state['canvas_width']}x{state['canvas_height']}) and avoid overlapping existing elements if possible. Find an empty spot. Estimate reasonable width/height if not obvious.
-        - If no update is needed (e.g., tool data doesn't match any component, or no space), indicate that by setting 'should_add_element' to false.
+        - Choose coordinates and dimensions carefully to fit within the canvas ({state['canvas_width']}x{state['canvas_height']}) and avoid overlapping existing widgets if possible. Find an empty spot. Estimate reasonable width/height if not obvious.
+        - If no update is needed (e.g., tool data doesn't match any widget, or no space), indicate that by setting 'should_add_element' to false.
 
         Respond using the 'CanvasUpdateDecision' structure.
     """
@@ -196,19 +197,19 @@ def update_canvas_node(state: AgentState) -> dict:
         # --- Original logic using the validated canvas_decision ---
         if canvas_decision.should_add_element:
             # Ensure required fields are present if should_add_element is True
-            if not all([canvas_decision.component_name, canvas_decision.x is not None, canvas_decision.y is not None, canvas_decision.width is not None, canvas_decision.height is not None, canvas_decision.props is not None]):
+            if not all([canvas_decision.widget_name, canvas_decision.x is not None, canvas_decision.y is not None, canvas_decision.width is not None, canvas_decision.height is not None, canvas_decision.props is not None]):
                 return {}
 
-            new_element = CanvasElement(
+            new_widget = CanvasWidget(
                 id=str(uuid.uuid4()),
-                component_name=canvas_decision.component_name,
+                widget_name=canvas_decision.widget_name,
                 x=canvas_decision.x,
                 y=canvas_decision.y,
                 width=canvas_decision.width,
                 height=canvas_decision.height,
                 props=canvas_decision.props or {}, # Default to empty dict if None, though validation should catch this
             )
-            return {"canvas_elements": [new_element]}
+            return {"canvas_widgets": [new_widget]}
         else:
             return {}
         # --- End of original logic ---
@@ -219,13 +220,13 @@ def update_canvas_node(state: AgentState) -> dict:
 
 # --- Initialization Node ---
 def initialize_node(state: AgentState):
-    """Sets initial canvas dimensions and clears elements."""
+    """Sets initial canvas dimensions and clears widgets."""
     width = state.get("canvas_width", 1024)
     height = state.get("canvas_height", 768)
     return {
         "canvas_width": width,
         "canvas_height": height,
-        "canvas_elements": [] # Start with an empty list of elements
+        "canvas_widgets": [] # Start with an empty list of widgets
     }
 
 # --- Conditional Edges ---
