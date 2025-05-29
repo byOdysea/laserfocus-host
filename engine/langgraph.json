@@ -1,7 +1,7 @@
 {
     "dependencies": ["."],
     "graphs": {
-        "jarvis": "src/main.py:jarvisGraph"
+        "laserfocus_engine": "src/graph.py:laserfocus_engine_graph"
     },
     "env": ".env"
 }
