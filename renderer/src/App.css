@@ -1,0 +1,237 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+:root {
+  --retro-green: #00ff00;
+  --retro-amber: #ffb000;
+  --retro-dark: #0a0a0a;
+  --retro-darker: #000000;
+  --retro-blue: #00ffff;
+  --retro-pink: #ff00ff;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Orbitron', monospace;
+  background: var(--retro-darker);
+  overflow: hidden;
+  cursor: none;
+}
+
+.retro-container {
+  width: 100vw;
+  height: 100vh;
+  background: 
+    radial-gradient(circle at center, var(--retro-dark) 0%, var(--retro-darker) 100%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 255, 0, 0.03) 2px,
+      rgba(0, 255, 0, 0.03) 4px
+    );
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
+
+.retro-screen {
+  width: 80%;
+  height: 70%;
+  background: var(--retro-dark);
+  border: 4px solid var(--retro-green);
+  border-radius: 20px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 
+    0 0 50px var(--retro-green),
+    inset 0 0 50px rgba(0, 255, 0, 0.1);
+  animation: screenFlicker 0.15s infinite linear alternate;
+}
+
+.scan-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 0, 0.1) 2px,
+    rgba(0, 255, 0, 0.1) 4px
+  );
+  pointer-events: none;
+  animation: scanMove 2s linear infinite;
+}
+
+.content {
+  padding: 60px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  position: relative;
+  z-index: 2;
+}
+
+.retro-title {
+  font-size: 3.5em;
+  font-weight: 900;
+  color: var(--retro-green);
+  text-shadow: 
+    0 0 10px var(--retro-green),
+    0 0 20px var(--retro-green),
+    0 0 30px var(--retro-green);
+  margin-bottom: 40px;
+  letter-spacing: 4px;
+  animation: titleGlow 2s ease-in-out infinite alternate;
+}
+
+.retro-border {
+  border: 2px solid var(--retro-amber);
+  padding: 30px;
+  background: rgba(255, 176, 0, 0.05);
+  margin: 20px 0;
+  position: relative;
+  box-shadow: 
+    0 0 20px var(--retro-amber),
+    inset 0 0 20px rgba(255, 176, 0, 0.1);
+}
+
+.retro-border::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, var(--retro-amber), var(--retro-green), var(--retro-blue), var(--retro-pink));
+  z-index: -1;
+  opacity: 0.3;
+  animation: borderRainbow 3s linear infinite;
+}
+
+.retro-text {
+  font-size: 1.8em;
+  font-weight: 700;
+  color: var(--retro-amber);
+  text-shadow: 
+    0 0 10px var(--retro-amber),
+    0 0 20px var(--retro-amber);
+  margin-bottom: 15px;
+  letter-spacing: 2px;
+}
+
+.retro-subtext {
+  font-size: 1.2em;
+  color: var(--retro-blue);
+  text-shadow: 
+    0 0 10px var(--retro-blue),
+    0 0 20px var(--retro-blue);
+  letter-spacing: 1px;
+  animation: textFlicker 1.5s infinite;
+}
+
+.retro-footer {
+  margin-top: 40px;
+  font-size: 1.5em;
+  color: var(--retro-green);
+}
+
+.blink {
+  animation: blink 1s infinite;
+  color: var(--retro-pink);
+  text-shadow: 
+    0 0 10px var(--retro-pink),
+    0 0 20px var(--retro-pink);
+}
+
+.cursor-blink {
+  animation: cursorBlink 1s infinite;
+  color: var(--retro-green);
+  text-shadow: 
+    0 0 10px var(--retro-green),
+    0 0 20px var(--retro-green);
+}
+
+/* Animations */
+@keyframes screenFlicker {
+  0% { opacity: 1; }
+  98% { opacity: 1; }
+  99% { opacity: 0.98; }
+  100% { opacity: 1; }
+}
+
+@keyframes scanMove {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes titleGlow {
+  0% { 
+    text-shadow: 
+      0 0 10px var(--retro-green),
+      0 0 20px var(--retro-green),
+      0 0 30px var(--retro-green);
+  }
+  100% { 
+    text-shadow: 
+      0 0 20px var(--retro-green),
+      0 0 30px var(--retro-green),
+      0 0 40px var(--retro-green);
+  }
+}
+
+@keyframes borderRainbow {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+@keyframes textFlicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+@keyframes cursorBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.3; }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .retro-screen {
+    width: 95%;
+    height: 80%;
+  }
+  
+  .content {
+    padding: 30px;
+  }
+  
+  .retro-title {
+    font-size: 2.5em;
+    letter-spacing: 2px;
+  }
+  
+  .retro-text {
+    font-size: 1.4em;
+  }
+  
+  .retro-subtext {
+    font-size: 1em;
+  }
+}
