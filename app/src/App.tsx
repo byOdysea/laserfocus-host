@@ -7,7 +7,7 @@ function App() {
         <div className="scan-lines"></div>
         <div className="content">
           <h1 className="retro-title">
-            <span className="blink">●</span> HELLO WORLD <span className="blink">●</span>
+            <span className="blink">●</span> LASERFOCUS <span className="blink">●</span>
           </h1>
           <div className="retro-border">
             <p className="retro-text">
