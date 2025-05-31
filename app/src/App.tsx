@@ -1,28 +1,101 @@
+import { Slot } from "@/components/ui/slot";
+import { Component, SlotType } from "@/lib/types";
+import { Suspense } from "react";
 import "./App.css";
+import { CanvasInput } from "./components/CanvasInput";
+import { getComponent } from "./components/registry";
+
+const slotOrder: SlotType[] = ['sidebar', 'primary'];
 
 function App() {
+
+  const thread = {
+    values: {
+      messages: [
+        {
+          role: "user",
+          content: "Hello, how are you?"
+        },
+        {
+          role: "assistant",
+          content: "I'm good, thank you!"
+        }
+      ],
+      canvas: {
+        components: [
+        ]
+      }
+    }
+  }
+
   return (
-    <div className="retro-container">
-      <div className="retro-screen">
-        <div className="scan-lines"></div>
-        <div className="content">
-          <h1 className="retro-title">
-            <span className="blink">●</span> LASERFOCUS <span className="blink">●</span>
-          </h1>
-          <div className="retro-border">
-            <p className="retro-text">
-              WELCOME TO THE FUTURE
-            </p>
-            <p className="retro-subtext">
-              [SYSTEM INITIALIZED]
-            </p>
-          </div>
-          <div className="retro-footer">
-            <span className="cursor-blink">█</span>
-          </div>
-        </div>
+    <main className="flex h-dvh bg-sky-200">
+      {slotOrder.map(slot => (
+        <Slot key={slot} name={slot}>
+          {slot === 'sidebar' ? (
+            <>
+              {(thread.values.canvas.components as Component[])
+                .filter(c => c.slot === slot)
+                .map(c => {
+                  const Comp = getComponent(c.type);
+                  if (!Comp) return null;
+                  return (
+                    <div className="w-full h-48 bg-white rounded-lg overflow-clip">
+                      <Suspense fallback={<div>Loading…</div>} key={c.id}>
+                        <Comp {...c.props} isWidget={true} />
+                      </Suspense>
+                    </div>
+                  );
+                })}
+            </>
+          ) : slot === 'primary' ? (
+            // Dynamic primary content with main-window and input structure
+            <>
+              {(thread.values.canvas.components as Component[])
+                .filter(c => c.slot === slot)
+                .map(c => {
+                  const Comp = getComponent(c.type);
+                  if (!Comp) return null;
+                  return (
+                    <div className="main-window w-full flex-1 flex flex-col bg-white rounded-lg overflow-clip">
+                      <div className="w-full h-6 text-center">
+                        <span className="text-xs font-thin text-stone-500">{c.props?.title ?? c.type ?? "Main Window"}</span>
+                      </div>
+                      <div className="w-full flex-1">
+                        <Suspense fallback={<div>Loading…</div>} key={c.id}>
+                          <Comp {...c.props} isWidget={false} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  );
+                })}
+              <CanvasInput />
+            </>
+          ) : (
+            // Default dynamic content for other slots
+            (thread.values.canvas.components as Component[])
+              .filter(c => c.slot === slot)
+              .map(c => {
+                const Comp = getComponent(c.type);
+                if (!Comp) return null;
+                return (
+                  <Suspense fallback={<div>Loading…</div>} key={c.id}>
+                    <Comp {...c.props} isWidget={slot === 'sidebar'} />
+                  </Suspense>
+                );
+              })
+          )}
+        </Slot>
+      ))}
+      <div className="sidebar-2 w-1/4 p-2 flex flex-col gap-2">
+        <div className="athena w-full h-48 bg-pink-500 rounded-lg"></div>
+        {/* <div className="recent-windows-list w-full h-48 bg-white"></div>
+        <div className="settings w-full h-48 bg-white"></div> */}
       </div>
-    </div>
+      <div className="overlay hidden fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[90%] bg-white rounded-lg shadow-lg">
+        typical Chat UI
+      </div>
+    </main>
   );
 }
 
