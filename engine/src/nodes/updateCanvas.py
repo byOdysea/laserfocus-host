@@ -9,30 +9,30 @@ from src.utils.types import EngineState
 # Set up logging
 logger = logging.getLogger(__name__)
 
-# Available widget types
-WIDGET_TYPES = [
-    "email_viewer",
-    "email_composer",
-    "calendar",
+# Available component types
+COMPONENT_TYPES = [
     "weather",
-    "web_browser",
-    "file_browser",
-    "task_manager",
-    "note_taker"
+    "email",
+    "calendar", 
+    "todo",
+    "notes",
+    "reminders"
 ]
 
-# Pydantic model for widget structure
-class PydanticWidget(BaseModel):
-    id: str = Field(..., description="Unique id for the widget")
-    type: str = Field(..., description=f"Type of widget. Must be one of: {', '.join(WIDGET_TYPES)}", 
-                     pattern=f"^({'|'.join(WIDGET_TYPES)})$")
-    description: str = Field(..., description="Description of widget's current purpose")
-    data: Dict[str, Any] = Field(default_factory=dict, 
-                               description="Data that the widget is currently displaying")
-    position: int = Field(..., 
-                         description="Position on the canvas (0-6), where 0 is center, 1-3 are left sidebar, 4-6 are right sidebar")
+# Available slots
+SLOT_TYPES = ["primary", "sidebar"]
 
-def update_canvas(state: EngineState) -> Dict[str, List[Dict]]:
+# Pydantic model for component structure
+class PydanticComponent(BaseModel):
+    id: str = Field(..., description="Unique id for the component")
+    type: str = Field(..., description=f"Type of component. Must be one of: {', '.join(COMPONENT_TYPES)}", 
+                     pattern=f"^({'|'.join(COMPONENT_TYPES)})$")
+    slot: str = Field(..., description=f"Slot where component should be rendered. Must be one of: {', '.join(SLOT_TYPES)}",
+                     pattern=f"^({'|'.join(SLOT_TYPES)})$")
+    props: Dict[str, Any] = Field(default_factory=dict, 
+                                description="Component-specific properties including data, configuration, and state")
+
+def update_canvas(state: EngineState) -> Dict[str, Dict[str, List[Dict]]]:
     """
     Updates the canvas based on the last action using structured output from the LLM.
     """
@@ -43,38 +43,85 @@ def update_canvas(state: EngineState) -> Dict[str, List[Dict]]:
             temperature=0
         )
         
-        # Ensure widgets exist in state
-        current_widgets = state.get("widgets", [])
+        # Ensure canvas exists in state
+        current_canvas = state.get("canvas", {"components": []})
+        current_components = current_canvas.get("components", [])
         
         # Prepare system prompt
         system_prompt = SystemMessage(
             content=f"""
-            You are a UI layout manager. Your task is to update the canvas widgets based on the conversation history.
+            You are a UI layout manager for a desktop productivity application. Your task is to update the canvas components based on the conversation history.
             
-            Current widgets: {current_widgets}
+            Current components: {current_components}
             
-            Layout rules:
-            - Position #0: Main focused widget (center stage)
-            - Positions #1-3: Left sidebar (vertical stack)
-            - Positions #4-6: Right sidebar (vertical stack)
+            LAYOUT SYSTEM:
+            - Slot "primary": Main content area (center stage) - use for the main focused component
+            - Slot "sidebar": Side panels - use for supporting widgets and quick-access tools
             
-            Available widget types:
-            - email_viewer: Displays a list of emails
-            - email_composer: For composing new emails
-            - calendar: Shows calendar events
-            - weather: Displays weather information
-            - web_browser: Embeds a web page
-            - file_browser: For file system navigation
-            - task_manager: Manages tasks
-            - note_taker: For taking notes (Markdown/Obsidian)
+            AVAILABLE COMPONENT TYPES:
+            - "weather": Displays weather information with location, temperature, conditions, and forecast
+            - "email": Email client with inbox, compose, and reading capabilities  
+            - "calendar": Calendar with events, scheduling, and date management
+            - "todo": Task management with lists, completion tracking, and priorities
+            - "notes": Note-taking app supporting markdown and rich text
+            - "reminders": Reminder and notification management
+            
+            COMPONENT PROPS GUIDELINES:
+            Each component type accepts specific props in the "props" field:
+            
+            Weather props:
+            - data: {{location, temperature, condition, humidity, windSpeed, forecast}}
+            - unit: "celsius" or "fahrenheit"
+            - showDetails: boolean for extended info
 
-            Respond with a JSON array of widgets that matches this structure:
-            {PydanticWidget.schema_json(indent=2)}
+            Email props:
+            - viewMode: "list" or "single" 
+            - emails: array of email objects
+            - selectedEmail: email ID for single view
+            - filter: "all", "unread", "starred", "sent", "drafts", "trash"
+            - isComposing: boolean for compose mode
+            
+            Calendar props:
+            - viewMode: "month", "week", "day"
+            - selectedDate: ISO date string
+            - events: array of event objects
+            - showWeekends: boolean
+            
+            Todo props:
+            - lists: array of todo list objects with tasks
+            - selectedList: list ID
+            - showCompleted: boolean
+            - sortBy: "priority", "date", "alphabetical"
+            
+            Notes props:
+            - notes: array of note objects
+            - selectedNote: note ID
+            - viewMode: "list", "single", "edit"
+            - searchQuery: string for filtering
+            
+            Reminders props:
+            - reminders: array of reminder objects
+            - filter: "all", "today", "upcoming", "overdue"
+            - showCompleted: boolean
 
-            Important guidelines:
-            1. Only include widgets that should be visible
-            2. Ensure positions are unique (0-6)
-            3. Keep important data when updating widgets
+            RULES:
+            1. Only create components that would be helpful for the current conversation context
+            2. Use "primary" slot for the main focused component the user wants to interact with
+            3. Use "sidebar" slot for supporting widgets and quick-reference information
+            4. Each component must have a unique ID
+            5. Keep data relevant and helpful - don't include placeholder data unless necessary
+            6. For email component, use realistic email data when showing examples
+            7. For calendar component, use current/relevant dates
+            8. Maintain existing component data when possible, only update what's needed
+
+            Respond with a JSON object containing a "components" array that matches this structure:
+            {{
+              "components": [
+                {PydanticComponent.schema_json(indent=2)}
+              ]
+            }}
+
+            Only include components that should be visible on the canvas right now.
             """
         )
         
@@ -91,14 +138,25 @@ def update_canvas(state: EngineState) -> Dict[str, List[Dict]]:
             content = content.strip()
             
             # Try to parse the response as JSON
-            widgets = json.loads(content)
-            if not isinstance(widgets, list):
-                widgets = [widgets]
-            return {"widgets": widgets}
+            canvas_data = json.loads(content)
+            
+            # Ensure it has the right structure
+            if isinstance(canvas_data, dict) and "components" in canvas_data:
+                components = canvas_data["components"]
+            elif isinstance(canvas_data, list):
+                components = canvas_data
+            else:
+                components = []
+                
+            if not isinstance(components, list):
+                components = []
+                
+            return {"canvas": {"components": components}}
+            
         except (json.JSONDecodeError, AttributeError) as e:
             logger.error(f"Failed to parse LLM response: {e}\nContent: {response.content}")
-            return {"widgets": current_widgets}
+            return {"canvas": current_canvas}
             
     except Exception as e:
         logger.error(f"Error in update_canvas: {str(e)}", exc_info=True)
-        return {"widgets": state.get("widgets", [])}
+        return {"canvas": state.get("canvas", {"components": []})}

@@ -9,7 +9,7 @@ interface EmailMessage {
   cc?: string[];
   subject: string;
   body: string;
-  date: Date;
+  date: Date | string;
   isRead: boolean;
   isStarred: boolean;
   labels: string[];
@@ -129,6 +129,11 @@ const Email: React.FC<EmailProps> = ({
   onForward = () => {},
   onBackToList = () => {}
 }) => {
+  // Helper function to ensure date is a Date object
+  const getDate = (date: Date | string): Date => {
+    return typeof date === 'string' ? new Date(date) : date;
+  };
+
   const unreadCount = emails.filter(e => !e.isRead).length;
   
   // Use directEmailId if provided, otherwise use selectedEmail
@@ -171,7 +176,7 @@ const Email: React.FC<EmailProps> = ({
                         {email.from}
                       </div>
                       <div className="text-xs text-gray-500 ml-2">
-                        {email.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        {getDate(email.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                       </div>
                     </div>
                     <div className="text-sm text-gray-600 truncate mt-1">{email.subject}</div>
@@ -255,7 +260,7 @@ const Email: React.FC<EmailProps> = ({
                   </div>
                 </div>
                 <div className="text-sm text-gray-500">
-                  {selectedEmailData.date.toLocaleString()}
+                  {getDate(selectedEmailData.date).toLocaleString()}
                 </div>
               </div>
               
@@ -369,7 +374,8 @@ const Email: React.FC<EmailProps> = ({
               type="text"
               placeholder="Search emails..."
               className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg"
-              value={searchQuery}
+              defaultValue={searchQuery}
+              readOnly
             />
           </div>
         </div>
@@ -390,7 +396,7 @@ const Email: React.FC<EmailProps> = ({
                 <div className="flex items-center gap-2">
                   {email.isStarred && <Star className="w-4 h-4 text-yellow-500 fill-current" />}
                   <span className="text-xs text-gray-500">
-                    {email.date.toLocaleDateString()}
+                    {getDate(email.date).toLocaleDateString()}
                   </span>
                 </div>
               </div>
@@ -413,26 +419,30 @@ const Email: React.FC<EmailProps> = ({
                 type="text"
                 placeholder="To"
                 className="w-full p-2 border border-gray-300 rounded"
-                value={composeData.to}
+                defaultValue={composeData.to}
+                readOnly
               />
               {composeData.isReplyAll && (
                 <input
                   type="text"
                   placeholder="Cc"
                   className="w-full p-2 border border-gray-300 rounded"
-                  value={composeData.cc || ''}
+                  defaultValue={composeData.cc || ''}
+                  readOnly
                 />
               )}
               <input
                 type="text"
                 placeholder="Subject"
                 className="w-full p-2 border border-gray-300 rounded"
-                value={composeData.subject}
+                defaultValue={composeData.subject}
+                readOnly
               />
               <textarea
                 placeholder="Write your message..."
                 className="flex-1 p-3 border border-gray-300 rounded resize-none"
-                value={composeData.body}
+                defaultValue={composeData.body}
+                readOnly
               />
             </div>
             <div className="flex gap-3 mt-4">
@@ -467,7 +477,7 @@ const Email: React.FC<EmailProps> = ({
                     )}
                   </div>
                   <div className="text-sm text-gray-500 mt-1">
-                    {selectedEmailData.date.toLocaleString()}
+                    {getDate(selectedEmailData.date).toLocaleString()}
                   </div>
                 </div>
                 <div className="flex gap-2">
