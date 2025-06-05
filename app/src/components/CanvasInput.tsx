@@ -3,13 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 
 interface CanvasInputProps {
   onCommand?: (command: string) => void;
+  isLoading?: boolean;
 }
 
-export const CanvasInput: React.FC<CanvasInputProps> = ({ onCommand }) => {
+export const CanvasInput: React.FC<CanvasInputProps> = ({ onCommand, isLoading }) => {
   const [input, setInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
-  
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -49,32 +49,33 @@ export const CanvasInput: React.FC<CanvasInputProps> = ({ onCommand }) => {
   }, []);
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full font-sans">
       {/* History Popover */}
       {showHistory && (
         <div
           ref={popoverRef}
-          className="absolute bottom-full -left-6 mb-2 w-full max-w-sm bg-white rounded-xl shadow-lg border border-gray-200 z-20 max-h-64 overflow-hidden"
+          className="absolute bottom-full left-0 mb-2 w-full max-w-md bg-white rounded-lg shadow-2xl border border-gray-200 z-20 max-h-80 overflow-hidden flex flex-col"
+          style={{ transform: 'translateY(-8px)'}} // Small offset to avoid overlap with input
         >
-          <div className="px-4 py-3 border-b border-gray-200 bg-gray-100">
-            <div className="text-sm font-medium text-gray-700">Command History</div>
+          <div className="px-4 py-3 border-b border-gray-200 bg-slate-50">
+            <h3 className="text-sm font-semibold text-slate-700">Command History</h3>
           </div>
           
-          <div className="py-1 max-h-48 overflow-y-auto">
+          <div className="flex-grow py-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 hover:scrollbar-thumb-slate-400 scrollbar-track-slate-100">
             {commandHistory.length > 0 ? (
               commandHistory.map((command, index) => (
                 <button
                   key={index}
                   onClick={() => handleHistoryItemClick(command)}
-                  className="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 bg-white hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150 border border-white"
-                  style={{ borderBottom: index === commandHistory.length - 1 ? 'none' : '' }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-500 hover:text-white transition-all duration-150 focus:outline-none focus:bg-blue-500 focus:text-white group"
                 >
-                  <div className="truncate">{command}</div>
+                  <div className="truncate group-hover:font-medium">{command}</div>
                 </button>
               ))
             ) : (
-              <div className="px-4 py-6 text-sm text-gray-500 text-center font-medium">
-                No command history yet
+              <div className="px-4 py-8 text-sm text-slate-500 text-center">
+                <Clock size={24} className="mx-auto mb-2 text-slate-400" />
+                No command history yet.
               </div>
             )}
           </div>
@@ -82,21 +83,22 @@ export const CanvasInput: React.FC<CanvasInputProps> = ({ onCommand }) => {
       )}
 
       {/* Input Pill */}
-      <form onSubmit={handleSubmit} className="relative">
-        <div className="flex items-center bg-white rounded-full border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+      <form onSubmit={handleSubmit} className="relative group">
+        <div className="flex items-center bg-white rounded-full border border-slate-300 shadow-sm hover:shadow-lg group-focus-within:shadow-lg transition-all duration-300 ease-in-out focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
           {/* History Button */}
           <button
             ref={historyButtonRef}
             type="button"
             onClick={() => setShowHistory(!showHistory)}
-            className={`flex items-center justify-center w-10 h-10 ml-1 rounded-full border transition-all duration-150 ${
+            disabled={isLoading}
+            className={`flex items-center justify-center w-10 h-10 ml-1.5 rounded-full transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-400 ${ 
               showHistory 
-                ? 'border-blue-300 bg-blue-100 text-blue-600 hover:bg-blue-200 hover:border-blue-400' 
-                : 'border-gray-300 bg-gray-100 text-gray-500 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600'
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700'
             }`}
             title="Command History"
           >
-            <Clock size={16} />
+            <Clock size={18} />
           </button>
 
           {/* Input Field */}
@@ -104,25 +106,26 @@ export const CanvasInput: React.FC<CanvasInputProps> = ({ onCommand }) => {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Tell me what you want to do..."
-            className="flex-1 px-4 py-3 bg-transparent border-none outline-none text-gray-700 placeholder-gray-400 text-sm font-medium"
+            placeholder={isLoading ? "Processing..." : "Enter your command..."}
+            className="flex-1 px-4 py-3 bg-transparent border-none outline-none text-slate-800 placeholder-slate-400 text-sm font-medium tracking-wide"
             autoComplete="off"
+            disabled={isLoading}
           />
 
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={!input.trim()}
-            className={`flex items-center justify-center w-10 h-10 mr-1 rounded-full border transition-all duration-150 ${
+            disabled={!input.trim() || isLoading}
+            className={`flex items-center justify-center w-10 h-10 mr-1.5 rounded-full transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-400 ${ 
               input.trim()
-                ? 'border-blue-300 bg-blue-100 text-blue-600 hover:bg-blue-200 hover:border-blue-400'
-                : 'border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed hover:border-gray-300 hover:bg-gray-100'
+                ? 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700 transform active:scale-95'
+                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
             }`}
             title="Send Command"
           >
             <Send 
-              size={16} 
-              className={input.trim() ? 'transform group-hover:translate-x-0.5 transition-transform duration-150' : ''}
+              size={18} 
+              className={input.trim() ? 'transform transition-transform duration-150 ease-in-out group-hover:translate-x-px' : ''}
             />
           </button>
         </div>

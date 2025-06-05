@@ -1,416 +1,258 @@
-import { Bell, Calendar, Clock, MapPin, Plus, Repeat } from 'lucide-react';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
+// Interfaces
 interface Reminder {
   id: string;
-  title: string;
-  notes?: string;
-  datetime?: Date;
-  location?: string;
+  text: string;
+  dueDate: Date | null;
+  list: string; // e.g., 'Personal', 'Work'
   isCompleted: boolean;
-  priority: 'low' | 'medium' | 'high';
-  repeat?: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
-  list: string;
+  createdAt: Date;
 }
 
-interface RemindersProps {
-  isWidget?: boolean;
-  reminders?: Reminder[];
-  selectedReminder?: string | null;
-  selectedList?: string | null;
-  filter?: 'all' | 'today' | 'upcoming' | 'completed' | 'overdue';
-  onReminderSelect?: (id: string) => void;
-  onReminderCreate?: (reminder: Omit<Reminder, 'id'>) => void;
-  onReminderUpdate?: (id: string, reminder: Partial<Reminder>) => void;
-  onReminderDelete?: (id: string) => void;
-  onReminderComplete?: (id: string) => void;
-  onListSelect?: (list: string | null) => void;
-  onFilterChange?: (filter: string) => void;
+interface RemindersDataConfig {
+  filter?: 'all' | 'today' | 'upcoming' | 'completed';
+  selectedList?: string | null; // To filter by a specific list like 'Work' or 'Personal'
+  directReminderId?: string | null; // To show a specific reminder
+  sortBy?: 'dueDate' | 'createdAt' | 'text';
 }
 
-const defaultReminders: Reminder[] = [
-  {
-    id: '1',
-    title: 'Doctor appointment',
-    notes: 'Annual checkup',
-    datetime: new Date('2024-01-16T14:00:00'),
-    location: 'Medical Center, 123 Health St',
-    isCompleted: false,
-    priority: 'high',
-    repeat: 'yearly',
-    list: 'Personal'
-  },
-  {
-    id: '2',
-    title: 'Pay electricity bill',
-    datetime: new Date('2024-01-20T09:00:00'),
-    isCompleted: false,
-    priority: 'medium',
-    repeat: 'monthly',
-    list: 'Bills'
-  },
-  {
-    id: '3',
-    title: 'Team lunch',
-    notes: 'Celebrating Q4 success',
-    datetime: new Date('2024-01-15T12:30:00'),
-    location: 'Italian Restaurant Downtown',
-    isCompleted: false,
-    priority: 'low',
-    repeat: 'none',
-    list: 'Work'
-  },
-  {
-    id: '4',
-    title: 'Water plants',
-    isCompleted: false,
-    priority: 'low',
-    repeat: 'weekly',
-    list: 'Home'
-  }
+export interface RemindersProps {
+  instanceId: string;
+  viewMode: 'widget' | 'full';
+  props?: {
+    dataConfig?: RemindersDataConfig;
+  };
+  // onInteraction?: (interaction: any) => void; // For future use
+}
+
+// Mock Data
+const mockReminders: Reminder[] = [
+  { id: 'r1', text: 'Submit project proposal', dueDate: new Date(Date.now() + 86400000 * 1), list: 'Work', isCompleted: false, createdAt: new Date(Date.now() - 86400000 * 2) },
+  { id: 'r2', text: 'Call Dr. Smith', dueDate: new Date(Date.now() + 86400000 * 0.5), list: 'Personal', isCompleted: false, createdAt: new Date(Date.now() - 86400000 * 1) },
+  { id: 'r3', text: 'Buy groceries for the week', dueDate: null, list: 'Personal', isCompleted: false, createdAt: new Date(Date.now() - 86400000 * 3) },
+  { id: 'r4', text: 'Team meeting for Q4 planning', dueDate: new Date(Date.now() + 86400000 * 3), list: 'Work', isCompleted: false, createdAt: new Date() },
+  { id: 'r5', text: 'Pay electricity bill', dueDate: new Date(Date.now() - 86400000 * 1), list: 'Personal', isCompleted: true, createdAt: new Date(Date.now() - 86400000 * 5) },
+  { id: 'r6', text: 'Prepare presentation slides', dueDate: new Date(Date.now() + 86400000 * 2), list: 'Work', isCompleted: false, createdAt: new Date(Date.now() - 86400000 * 0.5) },
 ];
 
-const priorityColors = {
-  low: 'bg-gray-100 text-gray-700',
-  medium: 'bg-yellow-100 text-yellow-700',
-  high: 'bg-red-100 text-red-700'
-};
+const Reminders: React.FC<RemindersProps> = ({ instanceId, viewMode, props }) => {
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [selectedReminder, setSelectedReminder] = useState<Reminder | null>(null);
+  // const [availableLists, setAvailableLists] = useState<string[]>(mockLists); // For future use with list management
 
-const Reminders: React.FC<RemindersProps> = ({
-  isWidget = false,
-  reminders = defaultReminders,
-  selectedReminder = null,
-  selectedList = null,
-  filter = 'all',
-  onReminderSelect = () => {},
-  onReminderCreate = () => {},
-  onReminderUpdate = () => {},
-  onReminderDelete = () => {},
-  onReminderComplete = () => {},
-  onListSelect = () => {},
-  onFilterChange = () => {}
-}) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  useEffect(() => {
+    console.log(`Reminders component (${instanceId}) initializing with config:`, props?.dataConfig);
+    let processedReminders = [...mockReminders];
 
-  const todayReminders = reminders.filter(r => 
-    !r.isCompleted && r.datetime && 
-    new Date(r.datetime).toDateString() === today.toDateString()
-  );
+    const config = props?.dataConfig;
 
-  const upcomingReminders = reminders.filter(r => 
-    !r.isCompleted && (!r.datetime || new Date(r.datetime) >= today)
-  ).sort((a, b) => {
-    if (!a.datetime) return 1;
-    if (!b.datetime) return -1;
-    return new Date(a.datetime).getTime() - new Date(b.datetime).getTime();
-  });
+    if (config?.directReminderId) {
+      const direct = processedReminders.find(r => r.id === config.directReminderId);
+      processedReminders = direct ? [direct] : [];
+    } else {
+      if (config?.selectedList) {
+        processedReminders = processedReminders.filter(r => r.list === config.selectedList);
+      }
 
-  if (isWidget) {
-    // Widget view - display only, no interactions
+      switch (config?.filter) {
+        case 'today':
+          processedReminders = processedReminders.filter(r => {
+            if (!r.dueDate) return false;
+            const today = new Date();
+            return r.dueDate.getFullYear() === today.getFullYear() &&
+                   r.dueDate.getMonth() === today.getMonth() &&
+                   r.dueDate.getDate() === today.getDate() &&
+                   !r.isCompleted;
+          });
+          break;
+        case 'upcoming':
+          processedReminders = processedReminders.filter(r => r.dueDate && r.dueDate.getTime() > Date.now() && !r.isCompleted);
+          break;
+        case 'completed':
+          processedReminders = processedReminders.filter(r => r.isCompleted);
+          break;
+        case 'all':
+        default:
+          // No additional filtering based on completion status unless specified
+          break;
+      }
+    }
+    
+    // Sorting (ensure non-completed are prioritized if sorting by due date)
+    if (config?.sortBy === 'dueDate') {
+        processedReminders.sort((a, b) => {
+            if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+            if (!a.dueDate) return 1;
+            if (!b.dueDate) return -1;
+            return a.dueDate.getTime() - b.dueDate.getTime();
+        });
+    } else if (config?.sortBy === 'createdAt') {
+        processedReminders.sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime());
+    } else if (config?.sortBy === 'text') {
+        processedReminders.sort((a,b) => a.text.localeCompare(b.text));
+    } else { // Default sort: non-completed by due date (soonest first), then completed by due date
+        processedReminders.sort((a, b) => {
+            if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+            if (!a.dueDate) return 1; // No due date to the end
+            if (!b.dueDate) return -1;
+            return a.dueDate.getTime() - b.dueDate.getTime();
+        });
+    }
+
+
+    setReminders(processedReminders);
+
+    if (processedReminders.length > 0) {
+      setSelectedReminder(processedReminders[0]);
+    } else {
+      setSelectedReminder(null);
+    }
+
+  }, [props?.dataConfig, instanceId]);
+
+  const handleReminderSelect = (reminder: Reminder) => {
+    setSelectedReminder(reminder);
+  };
+
+  // Common Styles
+  const commonBoxSizing: React.CSSProperties = { boxSizing: 'border-box' };
+  const baseStyle: React.CSSProperties = {
+    ...commonBoxSizing,
+    fontFamily: '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    height: '100%',
+    width: '100%',
+    backgroundColor: '#f0f4f8', // Light blueish background
+    color: '#2c3e50', // Dark blue-gray text
+  };
+
+  // Widget View
+  if (viewMode === 'widget') {
+    const upcomingReminder = reminders.find(r => !r.isCompleted && r.dueDate && r.dueDate.getTime() >= Date.now()) || reminders.find(r => !r.isCompleted);
+    const widgetStyle: React.CSSProperties = {
+      ...baseStyle,
+      borderRadius: '10px',
+      boxShadow: '0 5px 15px rgba(0,0,0,0.07)',
+      backgroundColor: '#ffffff',
+      padding: '18px',
+      justifyContent: 'center',
+      alignItems: 'flex-start',
+    };
+    const widgetTitleStyle: React.CSSProperties = { margin: '0 0 14px 0', fontSize: '1.15em', color: '#34495e', fontWeight: 600 };
+    const reminderTextStyle: React.CSSProperties = { margin: '0 0 6px 0', fontSize: '0.9em', fontWeight: 500, color: '#34495e' };
+    const reminderDateStyle: React.CSSProperties = { fontSize: '0.8em', color: '#7f8c8d' };
+    const noReminderStyle: React.CSSProperties = { fontSize: '0.9em', color: '#7f8c8d', textAlign: 'center', width: '100%', marginTop: '10px' };
+    const widgetFooterStyle: React.CSSProperties = { fontSize: '0.75em', color: '#95a5a6', marginTop: 'auto', paddingTop: '10px', textAlign: 'right', width: '100%' };
+
+
     return (
-      <div className="h-full flex flex-col bg-white overflow-hidden">
-        {/* Header */}
-        <div className="px-4 pt-4 pb-3 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bell className="w-5 h-5 text-red-600" />
-              <span className="font-medium text-gray-900">Reminders</span>
-            </div>
-            <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-medium">
-              {todayReminders.length}
-            </span>
+      <div style={widgetStyle}>
+        <h3 style={widgetTitleStyle}>Next Up</h3>
+        {upcomingReminder ? (
+          <div>
+            <p style={reminderTextStyle}>{upcomingReminder.text}</p>
+            {upcomingReminder.dueDate && <p style={reminderDateStyle}>Due: {new Date(upcomingReminder.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>}
           </div>
-        </div>
-        
-        {/* Reminders list - takes available space */}
-        <div className="flex-1 px-4 py-2 overflow-hidden">
-          {upcomingReminders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400">
-              <Bell className="w-8 h-8 mb-2 opacity-50" />
-              <div className="text-sm">No reminders</div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {upcomingReminders.slice(0, 3).map(reminder => (
-                <div key={reminder.id} className="-mx-2 px-2 py-2">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-                      <Clock className="w-4 h-4 text-red-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">{reminder.title}</div>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityColors[reminder.priority]}`}>
-                          {reminder.priority}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {reminder.datetime ? new Date(reminder.datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No date'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
-        {/* Footer - just display info */}
-        <div className="px-4 pb-4 pt-2 border-t border-gray-100">
-          <div className="text-xs text-gray-500 text-center">
-            {upcomingReminders.length} upcoming
-          </div>
-        </div>
+        ) : (
+          <p style={noReminderStyle}>No upcoming reminders.</p>
+        )}
+        <p style={widgetFooterStyle}>{reminders.filter(r => !r.isCompleted).length} active</p>
       </div>
     );
   }
 
-  // Full window view
-  const lists = Array.from(new Set(reminders.map(r => r.list)));
-  
-  const filteredReminders = reminders.filter(reminder => {
-    if (selectedList && reminder.list !== selectedList) {
-      return false;
-    }
-    
-    switch (filter) {
-      case 'today':
-        return reminder.datetime && 
-               new Date(reminder.datetime).toDateString() === today.toDateString();
-      case 'upcoming':
-        return !reminder.isCompleted && 
-               (!reminder.datetime || new Date(reminder.datetime) >= today);
-      case 'completed':
-        return reminder.isCompleted;
-      case 'overdue':
-        return !reminder.isCompleted && 
-               reminder.datetime && 
-               new Date(reminder.datetime) < today;
-      default:
-        return true;
-    }
-  });
+  // Full View (Portrait Optimized)
+  const fullViewStyle: React.CSSProperties = { ...baseStyle, flexDirection: 'row' };
+  const listPaneStyle: React.CSSProperties = {
+    ...commonBoxSizing,
+    width: '320px',
+    minWidth: '240px',
+    maxWidth: '40%',
+    borderRight: '1px solid #d1d8e0',
+    overflowY: 'auto',
+    padding: '15px',
+    backgroundColor: '#e9eef2'
+  };
+  const listTitleStyle: React.CSSProperties = { marginTop: '0', marginBottom: '15px', fontSize: '1.3em', color: '#2c3e50', fontWeight: 600, paddingLeft: '5px' };
+  const listItemStyleBase: React.CSSProperties = {
+    ...commonBoxSizing,
+    padding: '12px 15px',
+    marginBottom: '10px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    backgroundColor: '#ffffff',
+    border: '1px solid #d1d8e0',
+    transition: 'background-color 0.2s ease, transform 0.1s ease',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+  };
+  const listItemTextStyle: React.CSSProperties = { fontWeight: 500, marginBottom: '5px', fontSize: '0.95em', color: '#34495e' };
+  const listItemDateStyle: React.CSSProperties = { fontSize: '0.8em', color: '#7f8c8d' };
+  const listItemCompletedStyle: React.CSSProperties = { textDecoration: 'line-through', color: '#95a5a6' };
 
-  const sortedReminders = [...filteredReminders].sort((a, b) => {
-    // Completed reminders go to bottom
-    if (a.isCompleted !== b.isCompleted) {
-      return a.isCompleted ? 1 : -1;
-    }
-    // Sort by date
-    if (!a.datetime) return 1;
-    if (!b.datetime) return -1;
-    return new Date(a.datetime).getTime() - new Date(b.datetime).getTime();
-  });
-
-  const selectedReminderData = reminders.find(r => r.id === selectedReminder);
+  const detailPaneStyle: React.CSSProperties = { ...commonBoxSizing, flexGrow: 1, padding: '30px', overflowY: 'auto' };
+  const detailTextStyle: React.CSSProperties = { fontSize: '1.7em', marginBottom: '10px', color: '#162029', fontWeight: 600, lineHeight: 1.3 };
+  const detailMetaStyle: React.CSSProperties = { fontSize: '0.9em', color: '#566573', marginBottom: '25px' };
+  const detailStatusStyle: React.CSSProperties = { fontSize: '0.9em', fontWeight: 500 };
 
   return (
-    <div className="h-full flex bg-gray-50">
-      {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 p-4">
-        <button
-          onClick={() => onReminderCreate({
-            title: 'New Reminder',
-            isCompleted: false,
-            priority: 'medium',
-            repeat: 'none',
-            list: 'Personal'
-          })}
-          className="w-full bg-red-600 text-white rounded-lg py-2 px-4 mb-6 flex items-center justify-center gap-2 hover:bg-red-700"
-        >
-          <Plus className="w-4 h-4" />
-          New Reminder
-        </button>
-        
-        <div className="mb-6">
-          <div className="text-sm font-medium text-gray-700 mb-2">Filter</div>
-          <div className="space-y-1">
-            {['all', 'today', 'upcoming', 'completed', 'overdue'].map(f => (
-              <button
-                key={f}
-                onClick={() => onFilterChange(f)}
-                className={`w-full text-left px-3 py-2 rounded-lg capitalize ${
-                  filter === f ? 'bg-red-50 text-red-600' : 'hover:bg-gray-100'
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="text-sm font-medium text-gray-700 mb-2">Lists</div>
-          <div className="space-y-1">
-            <button
-              onClick={() => onListSelect(null)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
-                !selectedList ? 'bg-red-50 text-red-600' : 'hover:bg-gray-100'
-              }`}
-            >
-              All Lists
-            </button>
-            {lists.map(list => (
-              <button
-                key={list}
-                onClick={() => onListSelect(list)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
-                  selectedList === list ? 'bg-red-50 text-red-600' : 'hover:bg-gray-100'
-                }`}
-              >
-                {list}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 p-6">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-semibold text-gray-800 mb-6">Reminders</h2>
-          
-          <div className="space-y-2">
-            {sortedReminders.map(reminder => (
+    <div style={fullViewStyle}>
+      <style>{`.reminder-list-item:hover { background-color: #f8f9fa; transform: translateY(-1px); }`}</style>
+      <div style={listPaneStyle}>
+        <h3 style={listTitleStyle}>{props?.dataConfig?.selectedList || 'All Reminders'}</h3>
+        {reminders.length > 0 ? (
+          reminders.map(reminder => {
+            const isSelected = selectedReminder?.id === reminder.id;
+            const itemStyle: React.CSSProperties = {
+              ...listItemStyleBase,
+              backgroundColor: isSelected ? '#d6e4f0' : '#ffffff',
+              borderColor: isSelected ? '#b0c4de' : '#d1d8e0',
+              boxShadow: isSelected ? '0 3px 7px rgba(0,0,0,0.08)' : '0 2px 4px rgba(0,0,0,0.05)',
+            };
+            const textStyle = reminder.isCompleted ? {...listItemTextStyle, ...listItemCompletedStyle} : listItemTextStyle;
+            return (
               <div
                 key={reminder.id}
-                onClick={() => onReminderSelect(reminder.id)}
-                className={`bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer ${
-                  reminder.isCompleted ? 'opacity-60' : ''
-                } ${selectedReminder === reminder.id ? 'ring-2 ring-red-500' : ''}`}
+                className="reminder-list-item"
+                style={itemStyle}
+                onClick={() => handleReminderSelect(reminder)}
+                title={reminder.text}
               >
-                <div className="flex items-start gap-3">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onReminderComplete(reminder.id);
-                    }}
-                    className={`w-5 h-5 rounded-full border-2 mt-0.5 ${
-                      reminder.isCompleted 
-                        ? 'bg-red-600 border-red-600' 
-                        : 'border-gray-300 hover:border-red-600'
-                    }`}
-                  >
-                    {reminder.isCompleted && (
-                      <svg className="w-3 h-3 text-white mx-auto" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </button>
-                  
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className={`font-medium ${reminder.isCompleted ? 'line-through text-gray-500' : ''}`}>
-                          {reminder.title}
-                        </h3>
-                        
-                        <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-gray-500">
-                          {reminder.datetime && (
-                            <div className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />
-                              {new Date(reminder.datetime).toLocaleString()}
-                            </div>
-                          )}
-                          {reminder.location && (
-                            <div className="flex items-center gap-1">
-                              <MapPin className="w-3 h-3" />
-                              {reminder.location}
-                            </div>
-                          )}
-                          {reminder.repeat && reminder.repeat !== 'none' && (
-                            <div className="flex items-center gap-1">
-                              <Repeat className="w-3 h-3" />
-                              {reminder.repeat}
-                            </div>
-                          )}
-                        </div>
-                        
-                        {reminder.notes && (
-                          <p className="text-sm text-gray-600 mt-2">{reminder.notes}</p>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center gap-2 ml-4">
-                        <span className={`text-xs px-2 py-1 rounded-full ${priorityColors[reminder.priority]}`}>
-                          {reminder.priority}
-                        </span>
-                        <span className="text-xs text-gray-500">{reminder.list}</span>
-                      </div>
-                    </div>
+                <div style={textStyle}>{reminder.text}</div>
+                {reminder.dueDate && (
+                  <div style={reminder.isCompleted ? {...listItemDateStyle, ...listItemCompletedStyle} : listItemDateStyle}>
+                    Due: {new Date(reminder.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </div>
-                </div>
+                )}
+                {!reminder.dueDate && <div style={listItemDateStyle}>No due date</div>}
               </div>
-            ))}
-            
-            {sortedReminders.length === 0 && (
-              <div className="text-center text-gray-500 py-12">
-                No reminders found
-              </div>
-            )}
-          </div>
-        </div>
+            );
+          })
+        ) : (
+          <p style={{textAlign: 'center', color: '#7f8c8d', marginTop: '25px'}}>No reminders in this view.</p>
+        )}
       </div>
-
-      {/* Detail Panel */}
-      {selectedReminderData && (
-        <div className="w-96 bg-white border-l border-gray-200 p-6">
-          <div className="flex justify-between items-start mb-4">
-            <h3 className="text-lg font-semibold">Reminder Details</h3>
-            <button
-              onClick={() => onReminderSelect('')}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              ×
-            </button>
+      <div style={detailPaneStyle}>
+        {selectedReminder ? (
+          <>
+            <h2 style={detailTextStyle}>{selectedReminder.text}</h2>
+            <p style={detailMetaStyle}>
+              List: {selectedReminder.list}
+              {selectedReminder.dueDate && ` | Due: ${new Date(selectedReminder.dueDate).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}`}
+            </p>
+            <p style={{...detailStatusStyle, color: selectedReminder.isCompleted ? '#27ae60' : '#e74c3c' }}>
+              Status: {selectedReminder.isCompleted ? 'Completed' : 'Pending'}
+            </p>
+            {/* More details can be added here, e.g., notes, subtasks, etc. */}
+          </>
+        ) : (
+          <div style={{display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#7f8c8d'}}>
+            <p>Select a reminder to view details.</p>
           </div>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700">Title</label>
-              <input
-                type="text"
-                className="mt-1 w-full p-2 border border-gray-300 rounded"
-                value={selectedReminderData.title}
-                readOnly
-              />
-            </div>
-            
-            {selectedReminderData.datetime && (
-              <div>
-                <label className="text-sm font-medium text-gray-700">Date & Time</label>
-                <div className="mt-1 text-sm">{new Date(selectedReminderData.datetime).toLocaleString()}</div>
-              </div>
-            )}
-            
-            {selectedReminderData.location && (
-              <div>
-                <label className="text-sm font-medium text-gray-700">Location</label>
-                <div className="mt-1 text-sm">{selectedReminderData.location}</div>
-              </div>
-            )}
-            
-            {selectedReminderData.notes && (
-              <div>
-                <label className="text-sm font-medium text-gray-700">Notes</label>
-                <div className="mt-1 text-sm">{selectedReminderData.notes}</div>
-              </div>
-            )}
-            
-            <div className="pt-4 border-t border-gray-200">
-              <button
-                onClick={() => onReminderDelete(selectedReminderData.id)}
-                className="text-red-600 hover:text-red-700 text-sm"
-              >
-                Delete Reminder
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

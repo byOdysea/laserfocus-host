@@ -18,25 +18,22 @@
     "args": [
       "-y",
       "@modelcontextprotocol/server-filesystem",
-      "/Users/axantillon/repos/odysea/laserfocus-host"
+      "/Users/axantillon/repos/odysea/laserfocus"
     ]
   },
-  "puppeteer": {
-    "id": "puppeteer",
-    "name": "Puppeteer Server",
-    "description": "Provides puppeteer access using a local file.",
-    "type": "local",
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+  "fetch": {
+    "command": "uvx",
+    "args": ["mcp-server-fetch"]
   },
-  "everything": {
-    "id": "everything",
-    "name": "Everything Server",
-    "description": "Provides tools, resources and prompt to test MCP",
-    "type": "local",
-    "transport": "stdio",
+  "time": {
+    "command": "uvx",
+    "args": ["mcp-server-time"]
+  },
+  "sequential-thinking": {
     "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-everything"]
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-sequential-thinking"
+    ]
   }
 } 

@@ -1,6 +1,6 @@
-import { CheckSquare, Plus, Square, Tag } from 'lucide-react';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
+// Interfaces
 interface Task {
   id: string;
   title: string;
@@ -8,355 +8,278 @@ interface Task {
   completed: boolean;
   priority: 'low' | 'medium' | 'high';
   dueDate?: Date;
-  tags: string[];
+  tags: string[]; // Kept for structure, but not used in MVP display
   createdAt: Date;
 }
 
-interface ToDoProps {
-  isWidget?: boolean;
-  tasks?: Task[];
-  filter?: 'all' | 'active' | 'completed' | 'today' | 'upcoming';
-  sortBy?: 'priority' | 'dueDate' | 'createdAt' | 'title';
-  selectedTags?: string[];
-  searchQuery?: string;
-  onTaskToggle?: (id: string) => void;
-  onTaskCreate?: (task: Omit<Task, 'id' | 'createdAt'>) => void;
-  onTaskUpdate?: (id: string, task: Partial<Task>) => void;
-  onTaskDelete?: (id: string) => void;
-  onFilterChange?: (filter: string) => void;
-  onTagSelect?: (tag: string) => void;
+interface ToDoDataConfig {
+  initialFilter?: 'all' | 'active' | 'completed' | 'today' | 'upcoming';
+  initialSortBy?: 'priority' | 'dueDate' | 'createdAt' | 'title';
+  initialSelectedTags?: string[]; // Kept for structure
+  initialSearchQuery?: string; // Kept for structure
+  directTaskId?: string;
 }
 
-const defaultTasks: Task[] = [
-  {
-    id: '1',
-    title: 'Review project proposal',
-    description: 'Go through the Q1 project proposal and provide feedback',
-    completed: false,
-    priority: 'high',
-    dueDate: new Date('2024-01-16'),
-    tags: ['work', 'urgent'],
-    createdAt: new Date('2024-01-14')
-  },
-  {
-    id: '2',
-    title: 'Buy groceries',
-    completed: false,
-    priority: 'medium',
-    tags: ['personal'],
-    createdAt: new Date('2024-01-15')
-  },
-  {
-    id: '3',
-    title: 'Call dentist',
-    completed: true,
-    priority: 'low',
-    tags: ['personal', 'health'],
-    createdAt: new Date('2024-01-13')
-  },
-  {
-    id: '4',
-    title: 'Finish documentation',
-    description: 'Complete the API documentation for the new endpoints',
-    completed: false,
-    priority: 'high',
-    dueDate: new Date('2024-01-18'),
-    tags: ['work', 'development'],
-    createdAt: new Date('2024-01-14')
-  }
+export interface ToDoProps {
+  instanceId: string;
+  viewMode: 'widget' | 'full';
+  props?: {
+    dataConfig?: ToDoDataConfig;
+  };
+  // onInteraction?: (interaction: any) => void; // For future use
+}
+
+// Mock Data
+const mockTasks: Task[] = [
+  { id: 't1', title: 'Finalize Q3 report', description: 'Compile all data and write summary.', completed: false, priority: 'high', dueDate: new Date(Date.now() + 86400000 * 2), tags: ['work', 'report'], createdAt: new Date(Date.now() - 86400000 * 5) },
+  { id: 't2', title: 'Schedule dentist appointment', description: 'Routine check-up.', completed: false, priority: 'medium', dueDate: new Date(Date.now() + 86400000 * 7), tags: ['personal', 'health'], createdAt: new Date(Date.now() - 86400000 * 3) },
+  { id: 't3', title: 'Buy birthday gift for Alice', description: 'Needs to be something special.', completed: false, priority: 'high', dueDate: new Date(Date.now() + 86400000 * 4), tags: ['personal', 'gift'], createdAt: new Date(Date.now() - 86400000 * 1) },
+  { id: 't4', title: 'Renew gym membership', description: '', completed: true, priority: 'low', dueDate: new Date(Date.now() - 86400000 * 10), tags: ['personal', 'health'], createdAt: new Date(Date.now() - 86400000 * 15) },
+  { id: 't5', title: 'Research new Javascript frameworks', description: 'Look into Svelte and SolidJS.', completed: false, priority: 'medium', tags: ['work', 'learning'], createdAt: new Date(Date.now() - 86400000 * 0.5) },
 ];
 
-const priorityColors = {
-  low: 'text-gray-500',
-  medium: 'text-yellow-500',
-  high: 'text-red-500'
-};
+const priorityMap: { [key in Task['priority']]: number } = { high: 1, medium: 2, low: 3 };
 
-const ToDo: React.FC<ToDoProps> = ({
-  isWidget = false,
-  tasks = defaultTasks,
-  filter = 'all',
-  sortBy = 'priority',
-  selectedTags = [],
-  searchQuery = '',
-  onTaskToggle = () => {},
-  onTaskCreate = () => {},
-  onTaskUpdate = () => {},
-  onTaskDelete = () => {},
-  onFilterChange = () => {},
-  onTagSelect = () => {}
-}) => {
-  const activeTasks = tasks.filter(task => !task.completed);
-  const completedToday = tasks.filter(task => 
-    task.completed && 
-    new Date(task.createdAt).toDateString() === new Date().toDateString()
-  ).length;
+const ToDo: React.FC<ToDoProps> = ({ instanceId, viewMode, props }) => {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-  if (isWidget) {
-    // Widget view - display only, no interactions
+  useEffect(() => {
+    console.log(`ToDo component (${instanceId}) initializing with config:`, props?.dataConfig);
+    let processedTasks = [...mockTasks];
+    const config = props?.dataConfig;
+
+    if (config?.directTaskId) {
+        const direct = processedTasks.find(t => t.id === config.directTaskId);
+        processedTasks = direct ? [direct] : [];
+    } else {
+        // Filtering
+        switch (config?.initialFilter) {
+        case 'active':
+            processedTasks = processedTasks.filter(task => !task.completed);
+            break;
+        case 'completed':
+            processedTasks = processedTasks.filter(task => task.completed);
+            break;
+        case 'today':
+            processedTasks = processedTasks.filter(task => {
+            if (!task.dueDate) return false;
+            const today = new Date();
+            return task.dueDate.getFullYear() === today.getFullYear() &&
+                    task.dueDate.getMonth() === today.getMonth() &&
+                    task.dueDate.getDate() === today.getDate() &&
+                    !task.completed;
+            });
+            break;
+        case 'upcoming':
+            processedTasks = processedTasks.filter(task => task.dueDate && task.dueDate.getTime() > Date.now() && !task.completed);
+            break;
+        case 'all':
+        default:
+            // No change
+            break;
+        }
+    }
+
+    // Sorting
+    switch (config?.initialSortBy) {
+      case 'priority':
+        processedTasks.sort((a, b) => priorityMap[a.priority] - priorityMap[b.priority] || (a.dueDate && b.dueDate ? a.dueDate.getTime() - b.dueDate.getTime() : 0));
+        break;
+      case 'dueDate':
+        processedTasks.sort((a, b) => {
+          if (a.completed !== b.completed) return a.completed ? 1 : -1;
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return a.dueDate.getTime() - b.dueDate.getTime();
+        });
+        break;
+      case 'createdAt':
+        processedTasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        break;
+      case 'title':
+        processedTasks.sort((a, b) => a.title.localeCompare(b.title));
+        break;
+      default: // Default sort: active by priority then due date, then completed by due date
+        processedTasks.sort((a, b) => {
+            if (a.completed !== b.completed) return a.completed ? 1 : -1;
+            const priorityDiff = priorityMap[a.priority] - priorityMap[b.priority];
+            if (priorityDiff !== 0) return priorityDiff;
+            if (!a.dueDate) return 1;
+            if (!b.dueDate) return -1;
+            return a.dueDate.getTime() - b.dueDate.getTime();
+        });
+        break;
+    }
+
+    setTasks(processedTasks);
+    if (processedTasks.length > 0) {
+      setSelectedTask(processedTasks[0]);
+    } else {
+      setSelectedTask(null);
+    }
+  }, [props?.dataConfig, instanceId]);
+
+  const handleTaskSelect = (task: Task) => {
+    setSelectedTask(task);
+  };
+
+  // Common Styles
+  const commonBoxSizing: React.CSSProperties = { boxSizing: 'border-box' };
+  const baseStyle: React.CSSProperties = {
+    ...commonBoxSizing,
+    fontFamily: '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    height: '100%',
+    width: '100%',
+    backgroundColor: '#f8f9fa', // Very light gray background
+    color: '#212529', // Dark text
+  };
+
+  const getPriorityColor = (priority: Task['priority']): string => {
+    if (priority === 'high') return '#e74c3c'; // Red
+    if (priority === 'medium') return '#f39c12'; // Orange
+    return '#2ecc71'; // Green
+  };
+  
+  // Widget View
+  if (viewMode === 'widget') {
+    const activeTasks = tasks.filter(t => !t.completed);
+    const nextDueTask = [...activeTasks].sort((a,b) => (a.dueDate?.getTime() || Infinity) - (b.dueDate?.getTime() || Infinity))[0];
+
+    const widgetStyle: React.CSSProperties = {
+      ...baseStyle,
+      borderRadius: '12px',
+      boxShadow: '0 6px 18px rgba(0,0,0,0.08)',
+      backgroundColor: '#ffffff',
+      padding: '20px',
+      justifyContent: 'space-between',
+    };
+    const widgetHeaderStyle: React.CSSProperties = { margin: '0 0 15px 0', fontSize: '1.2em', color: '#343a40', fontWeight: 600 };
+    const taskSummaryStyle: React.CSSProperties = { fontSize: '0.95em', color: '#495057', marginBottom: '10px' };
+    const nextTaskTitleStyle: React.CSSProperties = { fontWeight: 500, margin: '0 0 5px 0', fontSize: '0.9em', color: '#343a40' };
+    const nextTaskDateStyle: React.CSSProperties = { fontSize: '0.8em', color: '#6c757d' };
+    const noTasksStyle: React.CSSProperties = { fontSize: '0.9em', color: '#6c757d', textAlign: 'center', width: '100%', marginTop: '10px' };
+
     return (
-      <div className="h-full flex flex-col bg-white overflow-hidden">
-        {/* Header */}
-        <div className="px-4 pt-4 pb-3 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckSquare className="w-5 h-5 text-green-600" />
-              <span className="font-medium text-gray-900">To-Do</span>
+      <div style={widgetStyle}>
+        <div>
+            <h3 style={widgetHeaderStyle}>Task Overview</h3>
+            <p style={taskSummaryStyle}>
+                {activeTasks.length} active task{activeTasks.length !== 1 ? 's' : ''}.
+            </p>
+            {nextDueTask ? (
+            <div>
+                <p style={{...nextTaskTitleStyle, borderLeft: `3px solid ${getPriorityColor(nextDueTask.priority)}`, paddingLeft: '8px'}}>
+                    {nextDueTask.title}
+                </p>
+                {nextDueTask.dueDate && <p style={nextTaskDateStyle}>Due: {new Date(nextDueTask.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>}
             </div>
-            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
-              {activeTasks.length}
-            </span>
-          </div>
+            ) : (
+            activeTasks.length === 0 && tasks.length > 0 ? <p style={noTasksStyle}>All tasks completed!</p> : <p style={noTasksStyle}>No active tasks.</p>
+            )}
         </div>
-        
-        {/* Tasks list - takes available space */}
-        <div className="flex-1 px-4 py-2 overflow-hidden">
-          {activeTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400">
-              <CheckSquare className="w-8 h-8 mb-2 opacity-50" />
-              <div className="text-sm">All tasks completed!</div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {activeTasks.slice(0, 2).map(task => (
-                <div key={task.id} className="-mx-2 px-2 py-1">
-                  <div className="flex items-start gap-2">
-                    <div className="flex-shrink-0 mt-0.5">
-                      <Square className="w-3 h-3 text-gray-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate leading-tight">{task.title}</div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
-                          {task.priority}
-                        </span>
-                        {task.dueDate && (
-                          <span className="text-xs text-gray-500">
-                            {new Date(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {activeTasks.length > 2 && (
-                <div className="text-xs text-gray-500 text-center pt-1">
-                  +{activeTasks.length - 2} more tasks
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        
-        {/* Footer - just display info */}
-        <div className="px-4 pb-4 pt-2 border-t border-gray-100">
-          <div className="text-xs text-gray-500 text-center">
-            {completedToday} completed today
-          </div>
+        <div style={{fontSize: '0.75em', color: '#adb5bd', textAlign: 'right', marginTop: '15px'}}>
+            Total: {tasks.length}
         </div>
       </div>
     );
   }
 
-  // Full window view
-  const filteredTasks = tasks.filter(task => {
-    // Apply search filter
-    if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-    
-    // Apply tag filter
-    if (selectedTags.length > 0 && !selectedTags.some(tag => task.tags.includes(tag))) {
-      return false;
-    }
-    
-    // Apply status filter
-    switch (filter) {
-      case 'active': return !task.completed;
-      case 'completed': return task.completed;
-      case 'today': 
-        return task.dueDate && new Date(task.dueDate).toDateString() === new Date().toDateString();
-      case 'upcoming':
-        return task.dueDate && new Date(task.dueDate) > new Date();
-      default: return true;
-    }
-  });
+  // Full View (Portrait Optimized)
+  const fullViewStyle: React.CSSProperties = { ...baseStyle, flexDirection: 'row' };
+  const listPaneStyle: React.CSSProperties = {
+    ...commonBoxSizing,
+    width: '350px',
+    minWidth: '280px',
+    maxWidth: '45%',
+    borderRight: '1px solid #dee2e6',
+    overflowY: 'auto',
+    padding: '18px',
+    backgroundColor: '#e9ecef'
+  };
+  const listTitleStyle: React.CSSProperties = { marginTop: '0', marginBottom: '18px', fontSize: '1.4em', color: '#343a40', fontWeight: 600, paddingLeft: '5px' };
+  const listItemStyleBase: React.CSSProperties = {
+    ...commonBoxSizing,
+    padding: '14px 18px',
+    marginBottom: '12px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    backgroundColor: '#ffffff',
+    borderLeftWidth: '4px',
+    borderLeftStyle: 'solid',
+    transition: 'background-color 0.2s ease, box-shadow 0.2s ease',
+    boxShadow: '0 2px 5px rgba(0,0,0,0.06)',
+  };
+  const listItemTitleStyle: React.CSSProperties = { fontWeight: 500, marginBottom: '6px', fontSize: '1em', color: '#212529' };
+  const listItemDateStyle: React.CSSProperties = { fontSize: '0.85em', color: '#6c757d' };
+  const listItemCompletedStyle: React.CSSProperties = { opacity: 0.7, textDecoration: 'line-through' };
 
-  // Sort tasks
-  const sortedTasks = [...filteredTasks].sort((a, b) => {
-    switch (sortBy) {
-      case 'priority': {
-        const priorityOrder = { high: 0, medium: 1, low: 2 };
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
-      }
-      case 'dueDate':
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-      case 'createdAt':
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      case 'title':
-        return a.title.localeCompare(b.title);
-      default:
-        return 0;
-    }
-  });
-
-  const allTags = Array.from(new Set(tasks.flatMap(task => task.tags)));
+  const detailPaneStyle: React.CSSProperties = { ...commonBoxSizing, flexGrow: 1, padding: '35px', overflowY: 'auto' };
+  const detailTitleStyle: React.CSSProperties = { fontSize: '1.8em', marginBottom: '12px', color: '#212529', fontWeight: 600, lineHeight: 1.3 };
+  const detailDescStyle: React.CSSProperties = { fontSize: '1em', color: '#495057', marginBottom: '20px', lineHeight: 1.6, whiteSpace: 'pre-wrap' };
+  const detailMetaStyle: React.CSSProperties = { fontSize: '0.9em', color: '#6c757d', marginBottom: '8px' };
 
   return (
-    <div className="h-full flex bg-gray-50">
-      {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 p-4">
-        <button
-          onClick={() => onTaskCreate({
-            title: 'New Task',
-            completed: false,
-            priority: 'medium',
-            tags: []
-          })}
-          className="w-full bg-green-600 text-white rounded-lg py-2 px-4 mb-6 flex items-center justify-center gap-2 hover:bg-green-700"
-        >
-          <Plus className="w-4 h-4" />
-          Add Task
-        </button>
-        
-        <div className="mb-6">
-          <div className="text-sm font-medium text-gray-700 mb-2">Filter</div>
-          <div className="space-y-1">
-            {['all', 'active', 'completed', 'today', 'upcoming'].map(f => (
-              <button
-                key={f}
-                onClick={() => onFilterChange(f)}
-                className={`w-full text-left px-3 py-2 rounded-lg capitalize ${
-                  filter === f ? 'bg-green-50 text-green-600' : 'hover:bg-gray-100'
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="text-sm font-medium text-gray-700 mb-2">Tags</div>
-          <div className="space-y-1">
-            {allTags.map(tag => (
-              <button
-                key={tag}
-                onClick={() => onTagSelect(tag)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${
-                  selectedTags.includes(tag) ? 'bg-green-50 text-green-600' : 'hover:bg-gray-100'
-                }`}
-              >
-                <Tag className="w-3 h-3" />
-                {tag}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <div className="text-sm text-gray-600">
-            <div>{tasks.length} total tasks</div>
-            <div>{activeTasks.length} active</div>
-            <div>{tasks.length - activeTasks.length} completed</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 p-6">
-        <div className="max-w-4xl mx-auto">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-semibold text-gray-800">Tasks</h2>
-            <div className="flex items-center gap-4">
-              <input
-                type="text"
-                placeholder="Search tasks..."
-                className="px-4 py-2 border border-gray-300 rounded-lg"
-                value={searchQuery}
-              />
-              <select
-                className="px-4 py-2 border border-gray-300 rounded-lg"
-                value={sortBy}
-                onChange={(e) => {}}
-              >
-                <option value="priority">Priority</option>
-                <option value="dueDate">Due Date</option>
-                <option value="createdAt">Created</option>
-                <option value="title">Title</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Task List */}
-          <div className="space-y-2">
-            {sortedTasks.map(task => (
+    <div style={fullViewStyle}>
+      <style>{`.task-list-item:hover { background-color: #f1f3f5; box-shadow: 0 4px 8px rgba(0,0,0,0.08); }`}</style>
+      <div style={listPaneStyle}>
+        <h3 style={listTitleStyle}>Tasks</h3>
+        {tasks.length > 0 ? (
+          tasks.map(task => {
+            const isSelected = selectedTask?.id === task.id;
+            const itemStyle: React.CSSProperties = {
+              ...listItemStyleBase,
+              borderLeftColor: getPriorityColor(task.priority),
+              backgroundColor: isSelected ? '#ddeeff' : '#ffffff', // Light blue for selected
+              ...(task.completed && listItemCompletedStyle)
+            };
+            return (
               <div
                 key={task.id}
-                className={`bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow ${
-                  task.completed ? 'opacity-60' : ''
-                }`}
+                className="task-list-item"
+                style={itemStyle}
+                onClick={() => handleTaskSelect(task)}
+                title={task.title}
               >
-                <div className="flex items-start gap-3">
-                  <button
-                    onClick={() => onTaskToggle(task.id)}
-                    className="mt-1"
-                  >
-                    {task.completed ? (
-                      <CheckSquare className="w-5 h-5 text-green-600" />
-                    ) : (
-                      <Square className="w-5 h-5 text-gray-400" />
-                    )}
-                  </button>
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className={`font-medium ${task.completed ? 'line-through text-gray-500' : ''}`}>
-                          {task.title}
-                        </h3>
-                        {task.description && (
-                          <p className="text-sm text-gray-600 mt-1">{task.description}</p>
-                        )}
-                        <div className="flex items-center gap-4 mt-2">
-                          <span className={`text-xs font-medium ${priorityColors[task.priority]}`}>
-                            {task.priority} priority
-                          </span>
-                          {task.dueDate && (
-                            <span className="text-xs text-gray-500">
-                              Due {new Date(task.dueDate).toLocaleDateString()}
-                            </span>
-                          )}
-                          <div className="flex gap-1">
-                            {task.tags.map(tag => (
-                              <span key={tag} className="text-xs bg-gray-100 px-2 py-1 rounded">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => onTaskDelete(task.id)}
-                        className="text-gray-400 hover:text-red-600 text-sm"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                <div style={{...listItemTitleStyle, ...(task.completed && {textDecoration: 'line-through'})}}>{task.title}</div>
+                {task.dueDate && (
+                  <div style={{...listItemDateStyle, ...(task.completed && {textDecoration: 'line-through'})}}>
+                    Due: {new Date(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </div>
-                </div>
+                )}
+                {!task.dueDate && <div style={listItemDateStyle}>No due date</div>}
               </div>
-            ))}
-            {sortedTasks.length === 0 && (
-              <div className="text-center text-gray-500 py-12">
-                No tasks found
-              </div>
-            )}
+            );
+          })
+        ) : (
+          <p style={{textAlign: 'center', color: '#6c757d', marginTop: '30px'}}>No tasks in this view.</p>
+        )}
+      </div>
+      <div style={detailPaneStyle}>
+        {selectedTask ? (
+          <>
+            <h2 style={{...detailTitleStyle, borderLeft: `5px solid ${getPriorityColor(selectedTask.priority)}`, paddingLeft: '15px', ...(selectedTask.completed && listItemCompletedStyle)}}>
+                {selectedTask.title}
+            </h2>
+            <p style={detailMetaStyle}>
+              Priority: <span style={{fontWeight: 500, color: getPriorityColor(selectedTask.priority)}}>{selectedTask.priority.charAt(0).toUpperCase() + selectedTask.priority.slice(1)}</span>
+              {selectedTask.dueDate && ` | Due: ${new Date(selectedTask.dueDate).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}`}
+            </p>
+            <p style={{...detailMetaStyle, color: selectedTask.completed ? '#28a745' : '#dc3545' }}>
+              Status: {selectedTask.completed ? 'Completed' : 'Active'}
+            </p>
+            {selectedTask.description && <p style={detailDescStyle}>{selectedTask.description}</p>}
+            {!selectedTask.description && <p style={{...detailDescStyle, fontStyle: 'italic', color: '#6c757d'}}>No description provided.</p>}
+            <p style={detailMetaStyle}>Created: {new Date(selectedTask.createdAt).toLocaleDateString()}</p>
+          </>
+        ) : (
+          <div style={{display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#6c757d'}}>
+            <p>Select a task to view details.</p>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

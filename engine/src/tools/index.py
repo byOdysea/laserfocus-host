@@ -1,11 +1,20 @@
+# This file serves as the central index for tools available to the agent.
+# It re-exports the necessary tools from other modules.
+
 from langchain_core.tools import tool
+import requests
+from datetime import datetime
+
+from .canvas import update_canvas, clear_canvas, add_component_to_canvas
 
 @tool
 def get_weather(location: str) -> dict:
-    """Gets the current weather and 5-day forecast for a specified location using Open-Meteo API."""
-    import requests
-    from datetime import datetime
-
+    """
+    Gets the current weather and 5-day forecast for a specified location using Open-Meteo API.
+    
+    Args:
+        location (str): The city and state, or city and country, e.g., 'San Francisco, CA' or 'London, UK'.
+    """
     # 1. Geocode location name to latitude/longitude
     geocode_url = f"https://geocoding-api.open-meteo.com/v1/search?name={location}&count=1&language=en&format=json"
     try:
@@ -95,3 +104,11 @@ def get_weather(location: str) -> dict:
         return {"error": f"Error during weather request: {e}"}
     except (KeyError, TypeError) as e:
         return {"error": f"Error parsing weather response: {e}"}
+
+# Ensure the tools are explicitly available for import
+__all__ = [
+    "get_weather",
+    "update_canvas",
+    "clear_canvas",
+    "add_component_to_canvas",
+]

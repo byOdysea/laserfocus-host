@@ -1,17 +1,11 @@
-from .index import get_weather
-from .dummy_data import (
-    generate_email_data,
-    generate_calendar_data,
-    generate_todo_data,
-    generate_notes_data,
-    generate_reminders_data
-)
+# This file re-exports the tools made available by index.py
+# to be easily accessible from the src.tools package.
+
+from .index import get_weather, update_canvas, clear_canvas, add_component_to_canvas
 
 __all__ = [
-    'get_weather',
-    'generate_email_data', 
-    'generate_calendar_data',
-    'generate_todo_data',
-    'generate_notes_data',
-    'generate_reminders_data'
+    "get_weather",
+    "update_canvas",
+    "clear_canvas",
+    "add_component_to_canvas",
 ]

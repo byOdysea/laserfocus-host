@@ -1,356 +1,213 @@
-import { Edit3, FileText, Folder, Plus, Search, Star, Trash2 } from 'lucide-react';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
+// Interfaces
 interface Note {
   id: string;
   title: string;
   content: string;
-  folder?: string;
-  tags: string[];
-  isStarred: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
 
-interface NotesProps {
-  isWidget?: boolean;
-  notes?: Note[];
-  selectedNote?: string | null;
-  searchQuery?: string;
-  selectedFolder?: string | null;
-  isEditing?: boolean;
-  editingContent?: {
-    title: string;
-    content: string;
-  };
-  view?: 'list' | 'grid';
-  sortBy?: 'updated' | 'created' | 'title';
-  onNoteSelect?: (id: string) => void;
-  onNoteCreate?: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  onNoteUpdate?: (id: string, note: Partial<Note>) => void;
-  onNoteDelete?: (id: string) => void;
-  onStarToggle?: (id: string) => void;
-  onSearch?: (query: string) => void;
-  onFolderSelect?: (folder: string | null) => void;
+interface NotesDataConfig {
+  initialSelectedNoteId?: string;
+  filter?: 'all' | 'pinned'; // Example, not implemented in MVP
+  sortBy?: 'createdAt' | 'updatedAt' | 'title';
 }
 
-const defaultNotes: Note[] = [
-  {
-    id: '1',
-    title: 'Meeting Notes - Product Roadmap',
-    content: '## Q1 Goals\n- Launch new feature\n- Improve performance by 20%\n- User research for Q2\n\n## Action Items\n- Schedule design review\n- Update documentation',
-    folder: 'Work',
-    tags: ['meetings', 'product'],
-    isStarred: true,
-    createdAt: new Date('2024-01-14T10:00:00'),
-    updatedAt: new Date('2024-01-15T14:30:00')
-  },
-  {
-    id: '2',
-    title: 'Recipe: Chocolate Chip Cookies',
-    content: '### Ingredients\n- 2 cups flour\n- 1 cup butter\n- 1 cup sugar\n- 2 eggs\n- Chocolate chips\n\n### Instructions\n1. Mix dry ingredients\n2. Cream butter and sugar\n3. Add eggs\n4. Combine all ingredients\n5. Bake at 350°F for 12 minutes',
-    folder: 'Personal',
-    tags: ['recipes', 'cooking'],
-    isStarred: false,
-    createdAt: new Date('2024-01-10T18:00:00'),
-    updatedAt: new Date('2024-01-10T18:30:00')
-  },
-  {
-    id: '3',
-    title: 'Book Notes: Deep Work',
-    content: 'Key takeaways from Deep Work by Cal Newport:\n\n1. **Focus is a superpower** in the modern economy\n2. **Shallow work** is increasingly common but less valuable\n3. **Deep work habits** must be cultivated\n4. **Attention residue** reduces performance',
-    folder: 'Reading',
-    tags: ['books', 'productivity'],
-    isStarred: true,
-    createdAt: new Date('2024-01-12T20:00:00'),
-    updatedAt: new Date('2024-01-13T10:00:00')
-  }
+export interface NotesProps {
+  instanceId: string;
+  viewMode: 'widget' | 'full';
+  props?: {
+    dataConfig?: NotesDataConfig;
+  };
+  // onInteraction?: (interaction: any) => void; // For future use
+}
+
+// Mock Data
+const mockNotes: Note[] = [
+  { id: '1', title: 'Grocery List', content: 'Milk, Eggs, Bread, Apples, Bananas, Cheese, Yogurt, Chicken, Rice, Pasta, Sauce, Onions, Garlic. Remember to check for organic options.', createdAt: new Date(Date.now() - 86400000 * 2), updatedAt: new Date(Date.now() - 86400000 * 1) },
+  { id: '2', title: 'Meeting Notes - Q3 Planning', content: 'Discuss Q3 roadmap. Key takeaways: Focus on user engagement. New feature launch planned for August. Marketing campaign to align. Allocate resources for R&D. Follow up with team leads by EOW.', createdAt: new Date(Date.now() - 86400000 * 5), updatedAt: new Date(Date.now() - 86400000 * 3) },
+  { id: '3', title: 'Idea for Project Phoenix', content: 'A new approach to data visualization using interactive 3D models. Potential to revolutionize how users interact with complex datasets. Need to research WebGL libraries and performance implications. Draft a proposal.', createdAt: new Date(Date.now() - 86400000 * 10), updatedAt: new Date(Date.now() - 86400000 * 10) },
+  { id: '4', title: 'Book Recommendations', content: '1. Sapiens by Yuval Noah Harari\n2. Atomic Habits by James Clear\n3. The Pragmatic Programmer by Andrew Hunt and David Thomas\n4. Thinking, Fast and Slow by Daniel Kahneman', createdAt: new Date(Date.now() - 86400000 * 1), updatedAt: new Date() },
 ];
 
-const Notes: React.FC<NotesProps> = ({
-  isWidget = false,
-  notes = defaultNotes,
-  selectedNote = null,
-  searchQuery = '',
-  selectedFolder = null,
-  isEditing = false,
-  editingContent = { title: '', content: '' },
-  view = 'list',
-  sortBy = 'updated',
-  onNoteSelect = () => {},
-  onNoteCreate = () => {},
-  onNoteUpdate = () => {},
-  onNoteDelete = () => {},
-  onStarToggle = () => {},
-  onSearch = () => {},
-  onFolderSelect = () => {}
-}) => {
-  const recentNotes = [...notes].sort((a, b) => 
-    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  ).slice(0, 3);
+const Notes: React.FC<NotesProps> = ({ instanceId, viewMode, props }) => {
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
 
-  if (isWidget) {
-    // Widget view - display only, no interactions
+  useEffect(() => {
+    console.log(`Notes component (${instanceId}) initializing with config:`, props?.dataConfig);
+    let processedNotes = [...mockNotes];
+
+    if (props?.dataConfig?.sortBy === 'title') {
+      processedNotes.sort((a, b) => a.title.localeCompare(b.title));
+    } else if (props?.dataConfig?.sortBy === 'createdAt') {
+      processedNotes.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    } else { // Default to updatedAt descending (most recently updated first)
+      processedNotes.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    }
+    setNotes(processedNotes);
+
+    if (props?.dataConfig?.initialSelectedNoteId) {
+      const note = processedNotes.find(n => n.id === props.dataConfig?.initialSelectedNoteId);
+      setSelectedNote(note || (processedNotes.length > 0 ? processedNotes[0] : null));
+    } else if (processedNotes.length > 0) {
+      setSelectedNote(processedNotes[0]);
+    } else {
+      setSelectedNote(null);
+    }
+  }, [props?.dataConfig, instanceId]); // Removed viewMode from deps as selection logic handles it
+
+  const handleNoteSelect = (note: Note) => {
+    setSelectedNote(note);
+  };
+
+  // Common Styles
+  const commonBoxSizing: React.CSSProperties = { boxSizing: 'border-box' };
+
+  const baseStyle: React.CSSProperties = {
+    ...commonBoxSizing,
+    fontFamily: '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    height: '100%',
+    width: '100%',
+    backgroundColor: '#f4f7f9', // Softer background
+    color: '#333',
+  };
+
+  // Widget View
+  if (viewMode === 'widget') {
+    const recentNote = notes[0];
+    const widgetStyle: React.CSSProperties = {
+      ...baseStyle,
+      borderRadius: '8px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+      backgroundColor: '#ffffff',
+      padding: '16px',
+      justifyContent: 'space-between', // Pushes total notes to bottom
+      alignItems: 'flex-start',
+    };
+    const widgetTitleStyle: React.CSSProperties = { margin: '0 0 12px 0', fontSize: '1.1em', color: '#2c3e50', fontWeight: 600 };
+    const notePreviewStyle: React.CSSProperties = { width: '100%' };
+    const notePreviewTitleStyle: React.CSSProperties = { margin: '0 0 6px 0', fontSize: '0.95em', fontWeight: 600, color: '#34495e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+    const notePreviewContentStyle: React.CSSProperties = { fontSize: '0.8em', margin: 0, color: '#555', maxHeight: '3.6em', lineHeight: '1.2em', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' };
+    const widgetFooterStyle: React.CSSProperties = { fontSize: '0.75em', color: '#7f8c8d', marginTop: '12px', textAlign: 'right', width: '100%' };
+
     return (
-      <div className="h-full flex flex-col bg-white overflow-hidden">
-        {/* Header */}
-        <div className="px-4 pt-4 pb-3 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-orange-600" />
-              <span className="font-medium text-gray-900">Notes</span>
-            </div>
-            <span className="text-xs text-gray-500">{notes.length}</span>
-          </div>
-        </div>
-        
-        {/* Notes list - takes available space */}
-        <div className="flex-1 px-4 py-2 overflow-hidden">
-          {recentNotes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400">
-              <FileText className="w-8 h-8 mb-2 opacity-50" />
-              <div className="text-sm">No notes yet</div>
+      <div style={widgetStyle}>
+        <div>
+          <h3 style={widgetTitleStyle}>Quick Note</h3>
+          {recentNote ? (
+            <div style={notePreviewStyle}>
+              <h4 style={notePreviewTitleStyle}>{recentNote.title}</h4>
+              <p style={notePreviewContentStyle}>{recentNote.content}</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {recentNotes.map(note => (
-                <div key={note.id} className="-mx-2 px-2 py-2">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                      <FileText className="w-4 h-4 text-orange-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between">
-                        <div className="text-sm font-medium text-gray-900 truncate flex-1">
-                          {note.title}
-                        </div>
-                        {note.isStarred && (
-                          <Star className="w-3 h-3 text-yellow-500 fill-current ml-2 flex-shrink-0" />
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {new Date(note.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </div>
-                      {note.folder && (
-                        <div className="text-xs text-gray-400 mt-1">{note.folder}</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <p style={{ fontSize: '0.9em', color: '#7f8c8d' }}>No active notes.</p>
           )}
         </div>
-        
-        {/* Footer - just display info */}
-        <div className="px-4 pb-4 pt-2 border-t border-gray-100">
-          <div className="text-xs text-gray-500 text-center">
-            {recentNotes.length} recent notes
-          </div>
-        </div>
+        <p style={widgetFooterStyle}>{notes.length} notes</p>
       </div>
     );
   }
 
-  // Full window view
-  const folders = Array.from(new Set(notes.map(note => note.folder).filter(Boolean))) as string[];
+  // Full View (Portrait Optimized)
+  const fullViewStyle: React.CSSProperties = {
+    ...baseStyle,
+    flexDirection: 'row',
+  };
+
+  const noteListPaneStyle: React.CSSProperties = {
+    ...commonBoxSizing,
+    width: '300px', // Fixed width for portrait, can be % for landscape
+    minWidth: '220px',
+    maxWidth: '35%',
+    borderRight: '1px solid #dce4e9',
+    overflowY: 'auto',
+    padding: '12px',
+    backgroundColor: '#e9edf0' // Slightly different bg for list pane
+  };
   
-  const filteredNotes = notes.filter(note => {
-    if (searchQuery && !note.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !note.content.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-    if (selectedFolder && note.folder !== selectedFolder) {
-      return false;
-    }
-    return true;
-  });
+  const noteListTitleStyle: React.CSSProperties = { marginTop: '0', marginBottom: '12px', fontSize: '1.2em', color: '#2c3e50', fontWeight: 600, paddingLeft: '4px' };
 
-  const sortedNotes = [...filteredNotes].sort((a, b) => {
-    switch (sortBy) {
-      case 'updated':
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      case 'created':
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      case 'title':
-        return a.title.localeCompare(b.title);
-      default:
-        return 0;
-    }
-  });
+  const noteListItemStyleBase: React.CSSProperties = {
+    ...commonBoxSizing,
+    padding: '10px 12px',
+    marginBottom: '8px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    backgroundColor: '#ffffff',
+    border: '1px solid #dce4e9',
+    transition: 'background-color 0.2s ease, box-shadow 0.2s ease',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+  };
 
-  const selectedNoteData = notes.find(note => note.id === selectedNote);
+  const noteListItemTitleStyle: React.CSSProperties = { fontWeight: 600, marginBottom: '4px', fontSize: '0.95em', color: '#34495e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+  const noteListItemSnippetStyle: React.CSSProperties = { fontSize: '0.8em', color: '#555', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+  const noteListItemDateStyle: React.CSSProperties = { fontSize: '0.75em', color: '#7f8c8d' };
+
+  const noteDetailPaneStyle: React.CSSProperties = {
+    ...commonBoxSizing,
+    flexGrow: 1,
+    padding: '24px',
+    overflowY: 'auto',
+  };
+
+  const noteDetailTitleStyle: React.CSSProperties = { fontSize: '1.8em', marginBottom: '8px', color: '#1c2833', fontWeight: 600, lineHeight: 1.3 };
+  const noteDetailMetaStyle: React.CSSProperties = { fontSize: '0.8em', color: '#7f8c8d', marginBottom: '20px' };
+  const noteDetailContentStyle: React.CSSProperties = { fontSize: '1em', color: '#333', lineHeight: '1.7', whiteSpace: 'pre-wrap', wordBreak: 'break-word' };
 
   return (
-    <div className="h-full flex bg-gray-50">
-      {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 p-4">
-        <button
-          onClick={() => onNoteCreate({
-            title: 'Untitled Note',
-            content: '',
-            tags: [],
-            isStarred: false
-          })}
-          className="w-full bg-orange-600 text-white rounded-lg py-2 px-4 mb-4 flex items-center justify-center gap-2 hover:bg-orange-700"
-        >
-          <Plus className="w-4 h-4" />
-          New Note
-        </button>
-
-        <div className="mb-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search notes..."
-              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
-              value={searchQuery}
-              onChange={(e) => onSearch(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <nav className="space-y-1 mb-6">
-          <button
-            onClick={() => onFolderSelect(null)}
-            className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
-              !selectedFolder ? 'bg-orange-50 text-orange-600' : 'hover:bg-gray-100'
-            }`}
-          >
-            All Notes
-          </button>
-          <button className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-gray-100">
-            Starred
-          </button>
-        </nav>
-
-        <div>
-          <div className="text-xs font-medium text-gray-500 uppercase mb-2">Folders</div>
-          <div className="space-y-1">
-            {folders.map(folder => (
-              <button
-                key={folder}
-                onClick={() => onFolderSelect(folder)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${
-                  selectedFolder === folder ? 'bg-orange-50 text-orange-600' : 'hover:bg-gray-100'
-                }`}
+    <div style={fullViewStyle}>
+      <style>{`.note-list-item:hover { background-color: #f0f4f7; box-shadow: 0 2px 4px rgba(0,0,0,0.06); }`}</style> {/* Simple hover effect */}
+      <div style={noteListPaneStyle}>
+        <h3 style={noteListTitleStyle}>All Notes</h3>
+        {notes.length > 0 ? (
+          notes.map(note => {
+            const isSelected = selectedNote?.id === note.id;
+            const itemStyle: React.CSSProperties = {
+              ...noteListItemStyleBase,
+              backgroundColor: isSelected ? '#d6eaf8' : '#ffffff', // Light blue for selected
+              borderColor: isSelected ? '#aed6f1' : '#dce4e9',
+              boxShadow: isSelected ? '0 2px 5px rgba(0,0,0,0.08)' : '0 1px 2px rgba(0,0,0,0.04)',
+            };
+            return (
+              <div
+                key={note.id}
+                className="note-list-item" // For hover
+                style={itemStyle}
+                onClick={() => handleNoteSelect(note)}
+                title={note.title}
               >
-                <Folder className="w-4 h-4" />
-                {folder}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Notes List */}
-      <div className="w-80 bg-white border-r border-gray-200">
-        <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-          <span className="text-sm font-medium">{sortedNotes.length} notes</span>
-          <select
-            className="text-sm border border-gray-300 rounded px-2 py-1"
-            value={sortBy}
-            onChange={(e) => {}}
-          >
-            <option value="updated">Last Updated</option>
-            <option value="created">Date Created</option>
-            <option value="title">Title</option>
-          </select>
-        </div>
-        
-        <div className="overflow-y-auto">
-          {sortedNotes.map(note => (
-            <div
-              key={note.id}
-              onClick={() => onNoteSelect(note.id)}
-              className={`p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 ${
-                selectedNote === note.id ? 'bg-orange-50 border-l-4 border-orange-600' : ''
-              }`}
-            >
-              <div className="flex items-start justify-between mb-1">
-                <h3 className="font-medium text-sm truncate flex-1">{note.title}</h3>
-                {note.isStarred && <Star className="w-4 h-4 text-yellow-500 fill-current" />}
-              </div>
-              <p className="text-xs text-gray-600 line-clamp-2 mb-2">
-                {note.content.replace(/[#*\n]/g, ' ').trim()}
-              </p>
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span>{new Date(note.updatedAt).toLocaleDateString()}</span>
-                {note.folder && (
-                  <>
-                    <span>•</span>
-                    <span>{note.folder}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Note Editor/Viewer */}
-      <div className="flex-1 bg-white">
-        {selectedNoteData ? (
-          <div className="h-full flex flex-col">
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => onStarToggle(selectedNoteData.id)}
-                  className="p-2 hover:bg-gray-100 rounded"
-                >
-                  <Star className={`w-5 h-5 ${selectedNoteData.isStarred ? 'text-yellow-500 fill-current' : 'text-gray-400'}`} />
-                </button>
-                <button className="p-2 hover:bg-gray-100 rounded">
-                  <Edit3 className="w-5 h-5 text-gray-400" />
-                </button>
-                <button
-                  onClick={() => onNoteDelete(selectedNoteData.id)}
-                  className="p-2 hover:bg-gray-100 rounded"
-                >
-                  <Trash2 className="w-5 h-5 text-gray-400" />
-                </button>
-              </div>
-              <div className="text-sm text-gray-500">
-                Last updated: {new Date(selectedNoteData.updatedAt).toLocaleString()}
-              </div>
-            </div>
-            
-            {isEditing ? (
-              <div className="flex-1 p-6 flex flex-col">
-                <input
-                  type="text"
-                  className="text-2xl font-bold mb-4 border-b border-gray-200 pb-2 focus:outline-none"
-                  value={editingContent.title}
-                  placeholder="Note title..."
-                />
-                <textarea
-                  className="flex-1 resize-none focus:outline-none"
-                  value={editingContent.content}
-                  placeholder="Start typing..."
-                />
-              </div>
-            ) : (
-              <div className="flex-1 p-6 overflow-y-auto">
-                <h1 className="text-2xl font-bold mb-4">{selectedNoteData.title}</h1>
-                <div className="prose max-w-none">
-                  <pre className="whitespace-pre-wrap font-sans">{selectedNoteData.content}</pre>
+                <div style={noteListItemTitleStyle}>{note.title}</div>
+                <div style={noteListItemSnippetStyle}>
+                  {note.content.substring(0, 40)}{note.content.length > 40 ? '...' : ''}
                 </div>
-                <div className="mt-8 pt-4 border-t border-gray-200">
-                  <div className="flex gap-2">
-                    {selectedNoteData.tags.map(tag => (
-                      <span key={tag} className="text-xs bg-gray-100 px-2 py-1 rounded">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
+                <div style={noteListItemDateStyle}>
+                  {new Date(note.updatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                 </div>
               </div>
-            )}
-          </div>
+            );
+          })
         ) : (
-          <div className="h-full flex items-center justify-center text-gray-500">
-            Select a note to view or edit
+          <p style={{textAlign: 'center', color: '#7f8c8d', marginTop: '20px'}}>No notes found.</p>
+        )}
+      </div>
+      <div style={noteDetailPaneStyle}>
+        {selectedNote ? (
+          <>
+            <h2 style={noteDetailTitleStyle}>{selectedNote.title}</h2>
+            <p style={noteDetailMetaStyle}>
+              Last updated: {new Date(selectedNote.updatedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}
+            </p>
+            <div style={noteDetailContentStyle}>{selectedNote.content}</div>
+          </>
+        ) : (
+          <div style={{display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#7f8c8d'}}>
+            <p>Select a note to view its content.</p>
           </div>
         )}
       </div>

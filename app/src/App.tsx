@@ -5,6 +5,7 @@ import { HumanMessage } from "@langchain/core/messages";
 import { useStream } from "@langchain/langgraph-sdk/react";
 import { Suspense } from "react";
 import "./App.css";
+import { AthenaWidget } from "./components/athena/AthenaWidget";
 import { CanvasInput } from "./components/CanvasInput";
 import { getComponent } from "./components/registry";
 
@@ -74,7 +75,7 @@ function App() {
                   return (
                     <div key={c.id} className="w-full h-48 bg-white rounded-lg overflow-clip">
                       <Suspense fallback={<div>Loading…</div>}>
-                        <Comp {...c.props} isWidget={true} />
+                        <Comp {...c.props} viewMode={slot === 'sidebar' ? 'widget' : 'full'} />
                       </Suspense>
                     </div>
                   );
@@ -100,13 +101,13 @@ function App() {
                       </div>
                       <div className="w-full flex-1">
                         <Suspense fallback={<div>Loading…</div>}>
-                          <Comp {...c.props} isWidget={false} />
+                          <Comp {...c.props} viewMode="full" />
                         </Suspense>
                       </div>
                     </div>
                   );
                 })}
-              <CanvasInput onCommand={handleCommand} />
+              <CanvasInput onCommand={handleCommand} isLoading={isLoading} />
             </>
           ) : (
             // Default dynamic content for other slots
@@ -125,7 +126,7 @@ function App() {
         </Slot>
       ))}
       <div className="sidebar-2 w-1/4 p-2 flex flex-col gap-2">
-        <div className="athena w-full h-48 bg-pink-500 rounded-lg"></div>
+        <AthenaWidget messages={thread.messages || []} isLoading={isLoading} />
         {/* Debug info */}
         {process.env.NODE_ENV === 'development' && (
           <div className="w-full bg-white rounded-lg text-xs">
