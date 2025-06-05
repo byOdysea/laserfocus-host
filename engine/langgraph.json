@@ -1,0 +1,7 @@
+{
+    "dependencies": ["."],
+    "graphs": {
+        "laserfocus_engine": "src/main.py:laserfocus_engine_graph"
+    },
+    "env": ".env"
+}
