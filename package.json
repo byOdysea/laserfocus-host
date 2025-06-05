@@ -1,0 +1,25 @@
+{
+  "name": "laserfocus",
+  "version": "0.0.1",
+  "description": "canvas engine mvp",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "cross-env NODE_ENV=development electron ."
+  },
+  "repository": "https://github.com/byOdysea/laserfocus.git",
+  "author": "Andres Antillon <axantillon@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^31.0.0",
+    "electron-reload": "^2.0.0-alpha.1"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.57",
+    "@langchain/google-genai": "^0.2.10",
+    "@langchain/langgraph": "^0.3.0",
+    "dotenv": "^16.5.0",
+    "electron-log": "^5.4.0"
+  }
+}

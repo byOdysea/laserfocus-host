@@ -1,0 +1,37 @@
+body {
+    margin: 0;
+    font-family: Menlo, Monaco, 'Courier New', monospace;
+    background-color: rgba(30, 30, 30, 0.85); /* Dark semi-transparent background */
+    color: #e0e0e0; /* Light text */
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 15px;
+    overflow-y: auto; /* Allow scrolling for long conversations */
+    height: 100vh; /* Full viewport height */
+    box-sizing: border-box;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 8px; /* Optional: slightly rounded corners for the window */
+}
+
+#conversation-log {
+    white-space: pre-wrap; /* Preserve whitespace and newlines, wrap text */
+}
+
+.log-line {
+    margin-bottom: 8px;
+}
+
+.log-line.user .prefix {
+    color: #7fcdff; /* Light blue for user prefix */
+    font-weight: bold;
+}
+
+.log-line.agent .prefix {
+    color: #a6e22e; /* Light green for agent prefix */
+    font-weight: bold;
+}
+
+.log-line .content {
+    /* No specific styling needed for content here, inherits from body */
+}
