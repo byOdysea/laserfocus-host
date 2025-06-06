@@ -6,7 +6,7 @@ body {
     font-size: 13px;
     line-height: 1.6;
     padding: 15px;
-    overflow-y: auto; /* Allow scrolling for long conversations */
+    /* overflow-y: auto; */ /* Removed: Scrolling handled by #conversation-log */
     height: 100vh; /* Full viewport height */
     box-sizing: border-box;
     backdrop-filter: blur(10px);
@@ -16,6 +16,15 @@ body {
 
 #conversation-log {
     white-space: pre-wrap; /* Preserve whitespace and newlines, wrap text */
+    height: 100%; /* Fill parent (body) */
+    overflow-y: auto; /* Enable scrolling within this div */
+    box-sizing: border-box;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none;  /* IE and Edge */
+}
+
+#conversation-log::-webkit-scrollbar {
+    display: none; /* Safari and Chrome */
 }
 
 .log-line {
@@ -30,8 +39,4 @@ body {
 .log-line.agent .prefix {
     color: #a6e22e; /* Light green for agent prefix */
     font-weight: bold;
-}
-
-.log-line .content {
-    /* No specific styling needed for content here, inherits from body */
 }
