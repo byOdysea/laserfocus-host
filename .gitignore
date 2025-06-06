@@ -139,3 +139,6 @@ dist
 release
 builder-effective-config.yaml
 builder-debug.yml
+
+# MacOs
+.DS_Store
