@@ -2,18 +2,27 @@
   "name": "laserfocus",
   "version": "0.0.1",
   "description": "canvas engine mvp",
-  "main": "main.js",
+  "main": "dist/main/main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "cross-env NODE_ENV=development electron ."
+    "clean": "rimraf dist",
+    
+    "build": "vite build",
+    "start": "yarn build && electron . --enable-logging --inspect",
+    "dev": "vite"
   },
   "repository": "https://github.com/byOdysea/laserfocus.git",
   "author": "Andres Antillon <axantillon@gmail.com>",
   "license": "MIT",
   "devDependencies": {
-    "cross-env": "^7.0.3",
+    "@types/node": "^22.15.30",
+    "concurrently": "^9.1.2",
     "electron": "^31.0.0",
-    "electron-reload": "^2.0.0-alpha.1"
+    "nodemon": "^3.1.10",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
   },
   "dependencies": {
     "@langchain/core": "^0.3.57",
