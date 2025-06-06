@@ -22,8 +22,8 @@ class AthenaWidgetWindow {
 
     constructor(primaryDisplay: Display) {
         this.window = new BrowserWindow({
-            width: 400,
-            height: 500,
+            width: 350, // Made smaller
+            height: 250, // Made smaller
             webPreferences: {
                 preload: path.join(__dirname, '../AthenaWidget/preload.js'),
                 nodeIntegration: true,
@@ -32,8 +32,8 @@ class AthenaWidgetWindow {
             frame: false,
             transparent: true,
             vibrancy: 'sidebar',
-            x: Math.round(primaryDisplay.workAreaSize.width / 2 - 200),
-            y: primaryDisplay.workArea.y + Math.round(primaryDisplay.workAreaSize.height * 0.1) + 80,
+            x: primaryDisplay.workArea.x + primaryDisplay.workAreaSize.width - 350 - 20, // Top-right X
+            y: primaryDisplay.workArea.y + 20, // Top-right Y
             alwaysOnTop: false,
         });
     }
@@ -74,10 +74,9 @@ class InputPill {
                 contextIsolation: true,
             },
             frame: false,
-            transparent: true,
-            vibrancy: 'under-window',
-            x: Math.round(primaryDisplay.workAreaSize.width / 2 - 250),
-            y: primaryDisplay.workArea.y + Math.round(primaryDisplay.workAreaSize.height * 0.1),
+            transparent: true, // Vibrancy removed for full transparency
+            x: primaryDisplay.workArea.x + Math.round(primaryDisplay.workAreaSize.width / 2 - 500 / 2),
+            y: primaryDisplay.workArea.y + Math.round(primaryDisplay.workAreaSize.height * 0.85) - Math.round(70 / 2), // Centered towards bottom
             alwaysOnTop: true,
         });
     }
@@ -127,6 +126,10 @@ const openWindowSchema = z.object({
     height: z.number().optional().describe("Optional height for the window."),
 });
 
+const closeWindowSchema = z.object({
+    id: z.string().describe("The ID of the browser window to close."),
+});
+
 class CanvasEngine {
     private apiKey: string;
     private modelName: string; // Restored modelName property
@@ -150,9 +153,16 @@ class CanvasEngine {
             func: async (args: z.infer<typeof openWindowSchema>) => this.coreOpenWindow(args),
         });
         
+        const closeWindowTool = new DynamicStructuredTool({
+            name: "close_browser_window",
+            description: "Closes an open browser window using its ID.",
+            schema: closeWindowSchema,
+            func: async (args: z.infer<typeof closeWindowSchema>) => this.coreCloseWindow(args),
+        });
+        
         // TODO: Add other window management tools (close, navigate, resize/move, list) here
         
-        this.tools = [...externalTools, openWindowTool]; 
+        this.tools = [...externalTools, openWindowTool, closeWindowTool]; 
 
         this.llm = new ChatGoogleGenerativeAI({
             apiKey: this.apiKey,
@@ -165,14 +175,43 @@ class CanvasEngine {
     private async coreOpenWindow(
         args: z.infer<typeof openWindowSchema>
     ): Promise<OpenWindowInfo> {
-        const { url, title, x, y, width, height } = args;
+        const { url, title } = args;
+        let { x, y, width, height } = args; // Make them mutable
         const id = crypto.randomUUID();
 
+        if (x === undefined || y === undefined || width === undefined || height === undefined) {
+            const { workArea } = screen.getPrimaryDisplay();
+            const generalMargin = 20;
+
+            // Athena Widget approx dimensions and position
+            const athenaWidgetWidth = 350;
+            const athenaWidgetHeight = 250; // User updated height
+            const athenaWidgetX = workArea.x + workArea.width - athenaWidgetWidth - generalMargin;
+            const athenaWidgetY = workArea.y + generalMargin;
+
+            // Input Pill approx dimensions and position
+            const inputPillHeight = 70;
+            const inputPillWidth = 500;
+            const inputPillY = workArea.y + Math.round(workArea.height * 0.85) - Math.round(inputPillHeight / 2);
+            // const inputPillX = workArea.x + Math.round(workArea.width / 2 - inputPillWidth / 2); // Not directly needed
+
+            const defaultX = workArea.x + generalMargin;
+            const defaultY = athenaWidgetY; // Align top with Athena widget's top
+            const defaultWidth = athenaWidgetX - defaultX - generalMargin; // Space to the left of Athena
+            const defaultHeight = inputPillY - defaultY - generalMargin; // Space above Input Pill
+
+            x = x === undefined ? defaultX : x;
+            y = y === undefined ? defaultY : y;
+            width = width === undefined ? Math.max(200, defaultWidth) : width; // Ensure a minimum width
+            height = height === undefined ? Math.max(200, defaultHeight) : height; // Ensure a minimum height
+            logger.info(`[CanvasEngine] No window geometry provided. Using calculated defaults: x=${x}, y=${y}, w=${width}, h=${height}`);
+        }
+
         const win = new BrowserWindow({
-            x: x, // If undefined, Electron will use default placement
-            y: y, // If undefined, Electron will use default placement
-            width: width || 1024, // Default width if not specified
-            height: height || 768, // Default height if not specified
+            x: x,
+            y: y,
+            width: width, 
+            height: height,
             title: title || url, 
             webPreferences: {
                 nodeIntegration: false, 
@@ -181,6 +220,7 @@ class CanvasEngine {
                 // preload: path.join(__dirname, 'preload-external-window.js'), // Optional: if you need a preload script
             },
             show: false, 
+            frame: false,
         });
 
         win.once('ready-to-show', () => {
@@ -204,25 +244,29 @@ class CanvasEngine {
         logger.info(`[CanvasEngine] Opened window ${id} for URL: ${url}. Title: ${win.getTitle()}`);
 
         win.on('closed', () => {
-            this.openBrowserWindows.delete(id);
-            logger.info(`[CanvasEngine] Window ${id} closed and removed from tracking.`);
-            // TODO: Implement state update to remove this window from AgentState.canvas.windows
-            // This requires a mechanism for the graph to react to external events or for tools
-            // to be called periodically to sync state. For now, it's just removed from local tracking.
+            logger.info(`[CanvasEngine] Window ${id} closed event fired.`);
+            this.openBrowserWindows.delete(id); // Remove from internal tracking
+            // Note: Agent graph state (canvas.windows) is updated via _updateCanvasStateFromToolsNode for tool-initiated closes.
+            // User-initiated closes are not yet directly synchronized back to the graph state in real-time.
         });
 
         const bounds = win.getBounds();
-        const actualTitle = win.getTitle(); 
+        return { id, url, title: win.getTitle(), x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+    }
 
-        return {
-            id,
-            url,
-            title: actualTitle,
-            x: bounds.x,
-            y: bounds.y,
-            width: bounds.width,
-            height: bounds.height,
-        };
+    private coreCloseWindow(args: { id: string }): { id: string; status: 'closed' | 'not_found' } {
+        const { id } = args;
+        const windowToClose = this.openBrowserWindows.get(id);
+        if (windowToClose) {
+            logger.info(`[CanvasEngine coreCloseWindow] Attempting to close window ${id}`);
+            windowToClose.destroy(); // Use destroy for more forceful closure
+            // win.on('closed') will handle deleting from this.openBrowserWindows
+            logger.info(`[CanvasEngine coreCloseWindow] Window ${id} destroyed.`);
+            return { id, status: 'closed' };
+        } else {
+            logger.warn(`[CanvasEngine coreCloseWindow] Window ${id} not found.`);
+            return { id, status: 'not_found' };
+        }
     }
     
     private _defineAgentState(): StateGraphArgs<AgentState>["channels"] {
@@ -290,77 +334,60 @@ When a window is opened, you will receive its ID, URL, title, and geometry. Use 
         return "__end__";
     }
 
-    // _callToolNode is removed as ToolNode handles tool execution directly.
-
     private _updateCanvasStateFromToolsNode(state: AgentState): Partial<AgentState> {
-        let newWindowInfos: OpenWindowInfo[] = [];
-        let invokingAIMessage: AIMessage | null = null;
-        let numToolCallsInAIMessage = 0;
+        const lastMessage = state.messages[state.messages.length - 1];
+        if (lastMessage && lastMessage._getType() === "tool") {
+            const toolMessage = lastMessage as ToolMessage;
+            // ToolNode's output (toolMessage.content) can be a single stringified JSON if one tool was called,
+            // or an array of stringified JSONs if multiple tools were called in parallel.
+            // We'll normalize it to an array for consistent processing.
+            const toolOutputsRaw = Array.isArray(toolMessage.content) ? toolMessage.content : [toolMessage.content];
+            
+            let currentWindows = [...(state.canvas?.windows || [])];
+            let windowsChanged = false;
 
-        // Iterate backwards to find the last AIMessage that likely triggered the tools
-        for (let i = state.messages.length - 1; i >= 0; i--) {
-            const msg = state.messages[i];
-            if (msg instanceof AIMessage && msg.tool_calls && msg.tool_calls.length > 0) {
-                // Check if the messages immediately following are the corresponding ToolMessages
-                // This assumes ToolNode adds ToolMessages directly after the AIMessage that called them.
-                let allToolMessagesPresent = true;
-                if (state.messages.length > i + msg.tool_calls.length) {
-                    for (let j = 0; j < msg.tool_calls.length; j++) {
-                        const nextMessage = state.messages[i + 1 + j];
-                        if (!(nextMessage instanceof ToolMessage) || nextMessage.tool_call_id !== msg.tool_calls[j].id) {
-                            allToolMessagesPresent = false;
-                            break;
+            toolOutputsRaw.forEach(outputContentString => {
+                if (typeof outputContentString === 'string') {
+                    try {
+                        const parsedOutput = JSON.parse(outputContentString);
+
+                        // Check if it's from open_browser_window (heuristic based on expected properties)
+                        if (parsedOutput.id && parsedOutput.url && typeof parsedOutput.x === 'number' && parsedOutput.title && parsedOutput.status === undefined) { 
+                            const openWindowInfo = parsedOutput as OpenWindowInfo;
+                            const existingWindowIndex = currentWindows.findIndex(w => w.id === openWindowInfo.id);
+                            if (existingWindowIndex > -1) {
+                                currentWindows[existingWindowIndex] = openWindowInfo;
+                            } else {
+                                currentWindows.push(openWindowInfo);
+                            }
+                            windowsChanged = true;
+                            logger.info(`[CanvasEngine _updateCanvasStateFromToolsNode] Added/Updated window ${openWindowInfo.id} in canvas state.`);
                         }
+                        // Check if it's from close_browser_window (heuristic based on expected properties)
+                        else if (parsedOutput.id && parsedOutput.status === 'closed') { 
+                            const closeWindowOutput = parsedOutput as { id: string; status: 'closed' | 'not_found' };
+                            const initialLength = currentWindows.length;
+                            currentWindows = currentWindows.filter(w => w.id !== closeWindowOutput.id);
+                            if (currentWindows.length < initialLength) {
+                                windowsChanged = true;
+                                logger.info(`[CanvasEngine _updateCanvasStateFromToolsNode] Removed window ${closeWindowOutput.id} from canvas state.`);
+                            }
+                        }
+                    } catch (e) {
+                        logger.warn('[CanvasEngine _updateCanvasStateFromToolsNode] Failed to parse tool message content as JSON or not a recognized tool output:', e, 'Content:', outputContentString);
                     }
                 } else {
-                    allToolMessagesPresent = false; // Not enough messages after AI message for all tool calls
+                    logger.warn('[CanvasEngine _updateCanvasStateFromToolsNode] Encountered non-string content in tool outputs:', outputContentString);
                 }
+            });
 
-                if (allToolMessagesPresent) {
-                    invokingAIMessage = msg;
-                    numToolCallsInAIMessage = msg.tool_calls.length;
-                    break; // Found the relevant AIMessage and its ToolMessages
-                }
+            if (windowsChanged) {
+                logger.info(`[CanvasEngine _updateCanvasStateFromToolsNode] Canvas windows state updated. New count: ${currentWindows.length}`);
+                return { canvas: { windows: currentWindows } };
             }
         }
-
-        if (!invokingAIMessage) {
-            logger.debug('[CanvasEngine _updateCanvasStateFromToolsNode] No recent AIMessage with corresponding ToolMessages found. No canvas update from tools.');
-            return {}; // No canvas update needed or tools not yet processed by this logic path
-        }
-
-        // Extract the ToolMessages that were added by ToolNode
-        const toolMessagesStartIndex = state.messages.indexOf(invokingAIMessage) + 1;
-        const recentToolMessages = state.messages.slice(toolMessagesStartIndex, toolMessagesStartIndex + numToolCallsInAIMessage);
-
-        for (const toolMessage of recentToolMessages) {
-            if (!(toolMessage instanceof ToolMessage)) continue; // Should not happen based on above check
-
-            // Find the original tool call from the AIMessage that this ToolMessage corresponds to
-            const originalToolCall = invokingAIMessage.tool_calls!.find(tc => tc.id === toolMessage.tool_call_id);
-
-            if (originalToolCall && originalToolCall.name === 'open_browser_window') {
-                try {
-                    // The content of the ToolMessage from open_browser_window is the JSON string of OpenWindowInfo
-                    const windowInfo = JSON.parse(toolMessage.content as string) as OpenWindowInfo;
-                    newWindowInfos.push(windowInfo);
-                    logger.debug('[CanvasEngine _updateCanvasStateFromToolsNode] Parsed windowInfo for canvas update:', windowInfo);
-                } catch (e) {
-                    logger.error('[CanvasEngine _updateCanvasStateFromToolsNode] Error parsing OpenWindowInfo from ToolMessage content:', e, toolMessage.content);
-                }
-            }
-        }
-
-        if (newWindowInfos.length > 0) {
-            const updatedWindows = [...(state.canvas?.windows || []), ...newWindowInfos];
-            logger.info('[CanvasEngine _updateCanvasStateFromToolsNode] Updating canvas windows. New count:', updatedWindows.length);
-            logger.debug('[CanvasEngine _updateCanvasStateFromToolsNode] Updated canvas windows details:', updatedWindows);
-            // Return only the canvas part to update, messages are already updated by ToolNode
-            return { canvas: { windows: updatedWindows } }; 
-        }
-        
-        logger.debug('[CanvasEngine _updateCanvasStateFromToolsNode] No open_browser_window tool calls found in recent ToolMessages.');
-        return {}; // No canvas update needed from this node
+        logger.debug('[CanvasEngine _updateCanvasStateFromToolsNode] No relevant tool messages to process for canvas state update or no changes made.');
+        return {}; // No change
     }
 
     private _buildGraph(): Runnable<AgentState, AgentState> {
