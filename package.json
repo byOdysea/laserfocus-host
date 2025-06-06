@@ -5,24 +5,41 @@
   "main": "dist/main/main.js",
   "scripts": {
     "clean": "rimraf dist",
-    
     "build": "vite build",
     "start": "yarn build && electron . --enable-logging --inspect",
-    "dev": "vite"
+    "dev": "vite",
+    "package-mac": "electron-builder --mac"
   },
   "repository": "https://github.com/byOdysea/laserfocus.git",
-  "author": "Andres Antillon <axantillon@gmail.com>",
+  "author": "Andres Antillon <axantillon@gmail.com>, ",
   "license": "MIT",
+  "productName": "Laserfocus",
   "devDependencies": {
     "@types/node": "^22.15.30",
     "concurrently": "^9.1.2",
     "electron": "^31.0.0",
+    "electron-builder": "^26.0.12",
     "nodemon": "^3.1.10",
     "rimraf": "^6.0.1",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-electron": "^0.29.0",
     "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "com.example.laserfocus",
+    "productName": "Laserfocus",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "mac": {
+      "icon": "assets/1024x.icns"
+    }
   },
   "dependencies": {
     "@langchain/core": "^0.3.57",

@@ -13,6 +13,11 @@ import * as path from 'path';
 import dotenv from 'dotenv';
 import crypto from 'crypto'; // Added for UUID generation
 
+// Set the application name as early as possible, before app 'ready' event.
+// This primarily affects the application menu bar title on macOS during development.
+app.setName("Laserfocus");
+logger.info(`[App] App name set via app.setName("Laserfocus") at top-level.`);
+
 
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
@@ -24,6 +29,7 @@ class AthenaWidgetWindow {
         this.window = new BrowserWindow({
             width: 350, // Made smaller
             height: 250, // Made smaller
+            title: 'Laserfocus',
             webPreferences: {
                 preload: path.join(__dirname, '../AthenaWidget/preload.js'),
                 nodeIntegration: true,
@@ -42,12 +48,27 @@ class AthenaWidgetWindow {
         if (VITE_DEV_SERVER_URL) {
             this.window.loadURL(`${VITE_DEV_SERVER_URL}/src/AthenaWidget/index.html`);
         } else {
-            if (!process.env.DIST) {
-                logger.error('CRITICAL: process.env.DIST is not defined. Cannot load AthenaWidget HTML.');
-                app.quit();
-                return; 
-            }
-            this.window.loadFile(path.join(process.env.DIST, 'renderer/athenaWidget.html'));
+            const basePath = app.getAppPath();
+            // In packaged app, appPath is often .../YourApp.app/Contents/Resources/app or .../your-app/resources/app
+            // We need to go up to the main 'dist' or equivalent if vite-plugin-electron structures it differently
+            // However, for vite-plugin-electron, the output structure is typically flat within the 'dist' folder relative to project root.
+            // So, if main.js is in 'dist/main', then 'dist/renderer' is '../renderer'
+            // Let's assume the 'dist' folder is at the same level as the 'src' or 'electron' folder in the source,
+            // and after packaging, it's directly inside the app's resource path.
+            // A common structure after build is: 
+            // YourApp.app/Contents/Resources/app/ (this is app.getAppPath())
+            //   ├── dist/
+            //   │   ├── main/
+            //   │   ├── renderer/
+            //   │   └── ...
+            // Or sometimes: 
+            // YourApp.app/Contents/Resources/app.asar (app.getAppPath() points inside asar)
+            //   (asar contains the 'dist' folder at its root)
+            // The key is that `vite-plugin-electron` builds output to `dist` at the project root.
+            // When packaged, this `dist` folder is typically at the root of the `app.asar` or `app` directory.
+            const rendererPath = path.join(basePath, 'dist/renderer/src/AthenaWidget/index.html');
+            logger.info(`[AthenaWidgetWindow] Attempting to load file from: ${rendererPath}`);
+            this.window.loadFile(rendererPath);
         }
         // logger.info('[AthenaWidgetWindow] Attempting to open DevTools for AthenaWidget...');
         // this.window.webContents.openDevTools({ mode: 'detach' });
@@ -68,6 +89,7 @@ class InputPill {
         this.window = new BrowserWindow({
             width: 500,
             height: 70,
+            title: 'Laserfocus',
             webPreferences: {
                 preload: path.join(__dirname, '../InputPill/preload.js'),
                 nodeIntegration: true, 
@@ -85,12 +107,10 @@ class InputPill {
         if (VITE_DEV_SERVER_URL) {
             this.window.loadURL(`${VITE_DEV_SERVER_URL}/src/InputPill/index.html`);
         } else {
-            if (!process.env.DIST) {
-                logger.error('CRITICAL: process.env.DIST is not defined. Cannot load InputPill HTML.');
-                app.quit();
-                return; 
-            }
-            this.window.loadFile(path.join(process.env.DIST, 'renderer/inputPill.html'));
+            const basePath = app.getAppPath();
+            const rendererPath = path.join(basePath, 'dist/renderer/src/InputPill/index.html');
+            logger.info(`[InputPill] Attempting to load file from: ${rendererPath}`);
+            this.window.loadFile(rendererPath);
         }
         // logger.info('[InputPill] Attempting to open DevTools for InputPill...');
         // this.window.webContents.openDevTools({ mode: 'detach' });
@@ -108,7 +128,6 @@ interface OpenWindowInfo {
     height?: number;
 }
 
-// Corrected AgentState: Removed redundant top-level 'windows'
 interface AgentState {
     messages: BaseMessage[];
     canvas: {
@@ -160,7 +179,7 @@ class CanvasEngine {
             func: async (args: z.infer<typeof closeWindowSchema>) => this.coreCloseWindow(args),
         });
         
-        // TODO: Add other window management tools (close, navigate, resize/move, list) here
+        // TODO: Add other window management tools (navigate, resize/move, list) here
         
         this.tools = [...externalTools, openWindowTool, closeWindowTool]; 
 
@@ -212,7 +231,7 @@ class CanvasEngine {
             y: y,
             width: width, 
             height: height,
-            title: title || url, 
+            title: title || 'Laserfocus',
             webPreferences: {
                 nodeIntegration: false, 
                 contextIsolation: true,
@@ -447,7 +466,8 @@ const initializeApp = async (): Promise<void> => {
     athenaWidget.init();
 
     try {
-        canvasEngineInstance = new CanvasEngine(process.env.GOOGLE_API_KEY, 'gemini-1.5-flash-latest', []); 
+        // Eventually build Settings page, and allow user to BYOK
+        canvasEngineInstance = new CanvasEngine("AIzaSyA9pRGCQPDKm6y7xd2mNiFqAAo6tuXtmJs", 'gemini-2.0-flash-lite', []);
         logger.info('[initializeApp] CanvasEngine initialized successfully.');
     } catch (error) {
         logger.error('[initializeApp] Failed to initialize CanvasEngine:', error);
@@ -525,6 +545,10 @@ const initializeApp = async (): Promise<void> => {
 };
 
 app.whenReady().then(() => {
+    // App name is now set at the top-level of main.ts, before app.whenReady.
+
+    // Dock icon for dev mode was removed as it's not a priority and relies on packaged app settings.
+
     logger.info("[App] Electron is ready. Calling initializeApp.");
     initializeApp();
 }).catch(e => {

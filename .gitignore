@@ -134,3 +134,8 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Electron Builder
+release
+builder-effective-config.yaml
+builder-debug.yml
