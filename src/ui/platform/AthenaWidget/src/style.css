@@ -1,0 +1,90 @@
+body {
+    margin: 0;
+    font-family: Menlo, Monaco, 'Courier New', monospace;
+    background-color: rgba(30, 30, 30, 0.85); /* Dark semi-transparent background */
+    color: #e0e0e0; /* Light text */
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 15px;
+    /* overflow-y: auto; */ /* Removed: Scrolling handled by #conversation-log */
+    height: 100vh; /* Full viewport height */
+    box-sizing: border-box;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 8px; /* Optional: slightly rounded corners for the window */
+}
+
+.status-panel {
+    display: flex;
+    gap: 12px;
+    padding: 6px;
+    background-color: #2a2a2a;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    border: 1px solid #3a3a3a;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.status-label {
+    color: #9a9a9a;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.status-value {
+    color: #e0e0e0;
+    font-size: 11px;
+    font-weight: 600;
+    background-color: #333;
+    padding: 2px 6px;
+    border-radius: 3px;
+    min-width: 20px;
+    text-align: center;
+}
+
+#conversation-log {
+    white-space: pre-wrap; /* Preserve whitespace and newlines, wrap text */
+    height: 100%; /* Fill parent (body) */
+    overflow-y: auto; /* Enable scrolling within this div */
+    box-sizing: border-box;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none;  /* IE and Edge */
+}
+
+#conversation-log::-webkit-scrollbar {
+    display: none; /* Safari and Chrome */
+}
+
+.log-line {
+    margin-bottom: 8px;
+}
+
+.log-line.user .prefix {
+    color: #7fcdff; /* Light blue for user prefix */
+    font-weight: bold;
+}
+
+.log-line.agent .prefix {
+    color: #a6e22e; /* Light green for agent prefix */
+    font-weight: bold;
+}
+
+.content {
+    color: #e0e0e0;
+}
+
+/* Completion marker styles */
+.completion .completion-marker {
+    color: #4CAF50;
+    font-style: italic;
+    opacity: 0.8;
+}
+
+.completion {
+    opacity: 0.7;
+}
