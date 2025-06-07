@@ -2,27 +2,68 @@
 import { z } from 'zod';
 
 export const openWindowSchema = z.object({
-    url: z.string().describe("The URL to open in the new browser window. Must be a valid URL string (e.g., https://www.example.com)."),
-    title: z.string().optional().describe("Optional title for the new window."),
-    x: z.number().optional().describe("Optional x coordinate for the window position."),
-    y: z.number().optional().describe("Optional y coordinate for the window position."),
-    width: z.number().optional().describe("Optional width for the window."),
-    height: z.number().optional().describe("Optional height for the window."),
+    url: z.string()
+        .min(1, "URL cannot be empty")
+        .describe("The URL to open in the new browser window (e.g., https://www.google.com)"),
+    title: z.string()
+        .optional()
+        .describe("Optional title for the window"),
+    x: z.number()
+        .int("X coordinate must be an integer")
+        .min(0, "X coordinate must be non-negative")
+        .optional()
+        .describe("X coordinate for the window's top-left corner in pixels"),
+    y: z.number()
+        .int("Y coordinate must be an integer") 
+        .min(0, "Y coordinate must be non-negative")
+        .optional()
+        .describe("Y coordinate for the window's top-left corner in pixels"),
+    width: z.number()
+        .int("Width must be an integer")
+        .min(100, "Width must be at least 100 pixels")
+        .optional()
+        .describe("Width of the window in pixels"),
+    height: z.number()
+        .int("Height must be an integer")
+        .min(100, "Height must be at least 100 pixels")
+        .optional()
+        .describe("Height of the window in pixels")
 });
 
 export const closeWindowSchema = z.object({
-    id: z.string().describe("The ID of the browser window to close."),
+    id: z.string()
+        .min(1, "Window ID cannot be empty")
+        .describe("The ID of the window to close (e.g., 'window-123')")
 });
 
 export const resizeAndMoveWindowSchema = z.object({
-    windowId: z.string().describe("The ID of the window to resize/move."),
-    x: z.number().optional().describe("The new x coordinate for the window's top-left corner."),
-    y: z.number().optional().describe("The new y coordinate for the window's top-left corner."),
-    width: z.number().optional().describe("The new width for the window."),
-    height: z.number().optional().describe("The new height for the window.")
-});
-/*
-}).refine(args => args.x !== undefined || args.y !== undefined || args.width !== undefined || args.height !== undefined, {
-    message: "At least one geometry parameter (x, y, width, height) must be provided."
-});
-*/
+    windowId: z.string()
+        .min(1, "Window ID cannot be empty")
+        .describe("The ID of the window to resize/move (e.g., 'window-123')"),
+    x: z.number()
+        .int("X coordinate must be an integer")
+        .min(0, "X coordinate must be non-negative")
+        .optional()
+        .describe("New X coordinate for the window's top-left corner in pixels"),
+    y: z.number()
+        .int("Y coordinate must be an integer")
+        .min(0, "Y coordinate must be non-negative")
+        .optional()
+        .describe("New Y coordinate for the window's top-left corner in pixels"),
+    width: z.number()
+        .int("Width must be an integer")
+        .min(100, "Width must be at least 100 pixels")
+        .optional()
+        .describe("New width of the window in pixels"),
+    height: z.number()
+        .int("Height must be an integer")
+        .min(100, "Height must be at least 100 pixels")
+        .optional()
+        .describe("New height of the window in pixels")
+}).refine(
+    (data) => data.x !== undefined || data.y !== undefined || data.width !== undefined || data.height !== undefined,
+    {
+        message: "At least one geometry parameter (x, y, width, height) must be provided",
+        path: ["geometry"]
+    }
+);

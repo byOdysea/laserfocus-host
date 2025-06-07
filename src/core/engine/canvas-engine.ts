@@ -1,17 +1,15 @@
 // src/engine/canvas-engine.ts
-import { BrowserWindow, screen, Rectangle } from 'electron';
-import { z } from 'zod';
-import { openWindowSchema, closeWindowSchema, resizeAndMoveWindowSchema } from './tools/canvas-tool-schemas';
-import { tool } from "@langchain/core/tools";
-import { BaseMessage, HumanMessage, AIMessage, ToolMessage, SystemMessage } from "@langchain/core/messages";
-import { ChatGoogleGenerativeAI, GoogleGenerativeAIChatCallOptions } from "@langchain/google-genai";
-import { StateGraph, START, END } from "@langchain/langgraph";
-import { Runnable } from "@langchain/core/runnables";
 import { BaseLanguageModelInput } from "@langchain/core/language_models/base";
-import { AIMessageChunk } from "@langchain/core/messages";
+import { AIMessage, AIMessageChunk, BaseMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import { Runnable } from "@langchain/core/runnables";
+import { StructuredTool, tool } from "@langchain/core/tools";
+import { ChatGoogleGenerativeAI, GoogleGenerativeAIChatCallOptions } from "@langchain/google-genai";
+import { END, START, StateGraph } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { StructuredTool } from '@langchain/core/tools';
+import { BrowserWindow, Rectangle, screen } from 'electron';
+import { z } from 'zod';
 import logger from '../../utils/logger';
+import { closeWindowSchema, openWindowSchema, resizeAndMoveWindowSchema } from './tools/canvas-tool-schemas';
 
 
 export interface CanvasWindowState {

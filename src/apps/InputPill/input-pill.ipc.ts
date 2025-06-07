@@ -1,8 +1,8 @@
 // src/apps/InputPill/input-pill.ipc.ts
-import { IpcMain, IpcMainEvent } from 'electron';
-import * as logger from '../../utils/logger';
-import { CanvasEngine } from '../../core/engine/canvas-engine';
+import { IpcMain } from 'electron';
 import { AppIpcModule, AppMainProcessInstances } from '../../core/bridge/types';
+import { CanvasEngineV2 } from '../../core/engine/canvas-engine-v2';
+import * as logger from '../../utils/logger';
 import { InputPill } from './input-pill.main'; // Specific type for appInstance
 
 // Placeholder for a more robust event bus if we introduce one.
@@ -14,11 +14,15 @@ const InputPillIpcHandlers: AppIpcModule = {
 
     registerMainProcessHandlers: (
         ipcMainInstance: IpcMain,
-        canvasEngine: CanvasEngine,
+        canvasEngine: any, // Pragmatic: support both V1 and V2
         appInstance: InputPill, // Type assertion for clarity
         allAppInstances?: AppMainProcessInstances
     ) => {
         logger.info(`[InputPill.ipc] Registering IPC handlers for ${InputPillIpcHandlers.moduleId}`);
+        
+        // Log which engine version is being used
+        const engineVersion = canvasEngine instanceof CanvasEngineV2 ? 'V2' : 'V1';
+        logger.info(`[InputPill.ipc] Canvas Engine ${engineVersion} detected for InputPill handlers`);
 
         // Example: If main-handlers.ts (or another service) emits specific events for InputPill
         // This is a more decoupled approach we're aiming for.
