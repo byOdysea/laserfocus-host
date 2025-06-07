@@ -17,25 +17,25 @@ export default defineConfig({
       },
       {
         // Preload script for InputPill
-        entry: 'src/InputPill/preload.ts',
+        entry: 'src/apps/InputPill/preload.ts',
         onstart(options) {
           options.reload(); // Reload Electron page on preload script change
         },
         vite: {
           build: {
-            outDir: 'dist/InputPill', // Output directory for InputPill preload
+            outDir: 'dist/apps/InputPill', // Output directory for InputPill preload
           },
         },
       },
       {
         // Preload script for AthenaWidget
-        entry: 'src/AthenaWidget/preload.ts',
+        entry: 'src/apps/AthenaWidget/preload.ts',
         onstart(options) {
           options.reload();
         },
         vite: {
           build: {
-            outDir: 'dist/AthenaWidget', // Output directory for AthenaWidget preload
+            outDir: 'dist/apps/AthenaWidget', // Output directory for AthenaWidget preload
           },
         },
       },
@@ -47,8 +47,8 @@ export default defineConfig({
     // For multiple HTML pages, the renderer plugin handles their specific build outputs.
     rollupOptions: {
       input: {
-        inputPill: path.resolve(__dirname, 'src/InputPill/index.html'),
-        athenaWidget: path.resolve(__dirname, 'src/AthenaWidget/index.html'),
+        inputPill: path.resolve(__dirname, 'src/apps/InputPill/index.html'),
+        athenaWidget: path.resolve(__dirname, 'src/apps/AthenaWidget/index.html'),
       },
     },
     outDir: 'dist/renderer', // Default output for renderer if not specified per page

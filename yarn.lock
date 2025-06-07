@@ -62,9 +62,9 @@
   optionalDependencies:
     global-agent "^3.0.0"
 
-"@electron/node-gyp@git+https://github.com/electron/node-gyp.git#06b29aafb7708acef8b3669835c8a7857ebc92d2":
+"@electron/node-gyp@https://github.com/electron/node-gyp#06b29aafb7708acef8b3669835c8a7857ebc92d2":
   version "10.2.0-electron.1"
-  resolved "git+https://github.com/electron/node-gyp.git#06b29aafb7708acef8b3669835c8a7857ebc92d2"
+  resolved "https://github.com/electron/node-gyp#06b29aafb7708acef8b3669835c8a7857ebc92d2"
   dependencies:
     env-paths "^2.2.0"
     exponential-backoff "^3.1.1"
@@ -322,10 +322,10 @@
     p-retry "4"
     uuid "^9.0.0"
 
-"@langchain/langgraph@^0.3.0":
-  version "0.3.0"
-  resolved "https://registry.yarnpkg.com/@langchain/langgraph/-/langgraph-0.3.0.tgz#20ace5560b61704be260b32023b877f354302180"
-  integrity sha512-4WT0DDh7qYXC0EjMk/KdLHjqpNVD0H9zSyOmlVXMCL53iIWFXvBUjgAwTGZytt9sO1td568Ovij0ZXONLzriOg==
+"@langchain/langgraph@^0.3.1":
+  version "0.3.1"
+  resolved "https://registry.yarnpkg.com/@langchain/langgraph/-/langgraph-0.3.1.tgz#12b55eed0ef6b9415c860c63692fd85a8f64e54c"
+  integrity sha512-BFa6DmKthPG1znkUhTBBqdza4dojs7QGg6o9V9aptIkWWdBF/UhRbjPvCx6ldkmU2oJRNWZ1BlkiP6RflxxPwA==
   dependencies:
     "@langchain/langgraph-checkpoint" "~0.0.18"
     "@langchain/langgraph-sdk" "~0.0.32"

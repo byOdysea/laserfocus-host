@@ -99,11 +99,16 @@ function processArgs(args: any[]): string {
   }).join(' ');
 }
 
-// --- Exported Logger Functions ---
+// Export the main log object and potentially the helper if needed elsewhere (though unlikely)
+export const { error, warn, info, verbose, debug, silly } = log;
 
-  export const debug = (...args: any[]) => log.debug(processArgs(args));
-  export const info = (...args: any[]) => log.info(processArgs(args));
-  export const warn = (...args: any[]) => log.warn(processArgs(args));
-  export const error = (...args: any[]) => log.error(processArgs(args));
-  // Expose log for direct use if needed (e.g. for transports configuration)
-export { log };
+// Overwrite methods to use processArgs for formatting
+log.error = (...args: any[]) => log.functions.error(processArgs(args));
+log.warn = (...args: any[]) => log.functions.warn(processArgs(args));
+log.info = (...args: any[]) => log.functions.info(processArgs(args));
+log.verbose = (...args: any[]) => log.functions.verbose(processArgs(args));
+log.debug = (...args: any[]) => log.functions.debug(processArgs(args));
+log.silly = (...args: any[]) => log.functions.silly(processArgs(args));
+
+// Default export for convenience if only one thing is typically imported
+export default log;
