@@ -1,7 +1,7 @@
 // src/apps/InputPill/input-pill.main.ts
+import * as logger from '@utils/logger';
 import { BrowserWindow, Display, ipcMain } from 'electron';
 import * as path from 'path';
-import * as logger from '../../utils/logger';
 
 const INPUT_PILL_WIDTH = 700;
 const INPUT_PILL_HEIGHT = 60;
@@ -53,15 +53,14 @@ export class InputPill {
         this.window.setFullScreenable(false);
 
         if (this.viteDevServerUrl) {
-            // Assuming Vite serves InputPill UI at a specific path, e.g., /input-pill.html or /apps/InputPill/index.html
-            // Adjust this URL to match your Vite setup for the InputPill UI
-            const devUrl = `${this.viteDevServerUrl}src/apps/InputPill/index.html`; // Adjusted path to index.html within src
+            // Load from new ui/platform structure
+            const devUrl = `${this.viteDevServerUrl}src/ui/platform/InputPill/src/index.html`;
             logger.info(`[InputPill.main] Loading dev URL: ${devUrl}`);
             this.window.loadURL(devUrl).catch(err => {
                 logger.error('[InputPill.main] Failed to load InputPill dev URL:', err);
             });
         } else {
-            const prodPath = path.join(__dirname, '../renderer/apps/InputPill/input-pill.html');
+            const prodPath = path.join(__dirname, '../renderer/ui/platform/InputPill/src/index.html');
             logger.info(`[InputPill.main] Loading production file: ${prodPath}`);
             this.window.loadFile(prodPath).catch(err => {
                 logger.error('[InputPill.main] Failed to load InputPill production file:', err);

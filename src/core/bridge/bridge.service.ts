@@ -1,19 +1,20 @@
 // src/core/bridge/bridge.service.ts
+import * as logger from '@utils/logger';
 import { ipcMain } from 'electron'; // Import ipcMain directly
-import * as logger from '../../utils/logger';
 // We no longer import specific app types here for the initializeBridge signature
-import { AnyCanvasEngine, AppIpcModule, AppMainProcessInstances } from './types'; // Import the new types
+import { AppIpcModule, AppMainProcessInstances } from '@core/bridge/types'; // Import the new types
+import { CanvasEngine } from '@core/engine/canvas-engine';
 
 /**
  * Initializes the IPC bridge by registering core event handlers and
  * delegating to app-specific IPC modules for their handlers.
  *
- * @param canvasEngine - The initialized CanvasEngine instance (V1 or V2).
+ * @param canvasEngine - The initialized CanvasEngine instance.
  * @param appModules - An array of AppIpcModule instances, each responsible for its own IPC setup.
  * @param appInstances - A map of all initialized app main process instances.
  */
 export const initializeBridge = (
-    canvasEngine: AnyCanvasEngine,
+    canvasEngine: CanvasEngine,
     appModules: AppIpcModule[],
     appInstances: AppMainProcessInstances
 ): void => {
@@ -72,7 +73,7 @@ function registerModernAgentHandler(
     ipcMain.on('run-agent', async (event, query: string) => {
         logger.info(`[BridgeService] Modern run-agent handler received query: "${query}"`);
         
-        const athenaWidgetInstance = appInstances.get('athenaWidget');
+        const athenaWidgetInstance = appInstances.get('AthenaWidget');
         
         try {
             // Emit user query to AthenaWidget
@@ -87,17 +88,24 @@ function registerModernAgentHandler(
             // Use Canvas Engine's invoke method
             const result = await canvasEngine.invoke(query);
             
-            // Extract response content from the result
+            // Canvas Engine now returns action summary directly as a string
             let responseContent = "Task completed successfully.";
-            if (result.messages && result.messages.length > 0) {
-                const lastMessage = result.messages[result.messages.length - 1];
-                if (lastMessage.content && typeof lastMessage.content === 'string') {
-                    responseContent = lastMessage.content;
-                } else if ((lastMessage as any).tool_calls?.length > 0) {
-                    const toolCallSummary = (lastMessage as any).tool_calls.map((tc: any) => 
-                        `Executed: ${tc.name}`
-                    ).join(', ');
-                    responseContent = `Actions performed: ${toolCallSummary}`;
+            if (typeof result === 'string') {
+                responseContent = result;
+            } else if (result && typeof result === 'object') {
+                // Fallback for legacy format (if any)
+                if (result.messages && result.messages.length > 0) {
+                    const lastMessage = result.messages[result.messages.length - 1];
+                    if (lastMessage.content && typeof lastMessage.content === 'string') {
+                        responseContent = lastMessage.content;
+                    } else if ((lastMessage as any).tool_calls?.length > 0) {
+                        const toolCallSummary = (lastMessage as any).tool_calls.map((tc: any) => 
+                            `Executed: ${tc.name}`
+                        ).join(', ');
+                        responseContent = `Actions performed: ${toolCallSummary}`;
+                    }
+                } else {
+                    responseContent = JSON.stringify(result);
                 }
             }
             

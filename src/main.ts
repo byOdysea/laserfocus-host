@@ -1,27 +1,22 @@
+import { APP_NAME, IS_DEV, VITE_DEV_SERVER_URL } from '@core/config/app-config';
+import { CanvasEngine } from '@core/engine/canvas-engine';
+import * as logger from '@utils/logger';
 import 'dotenv/config'; // Ensure this is at the very top
 import { app, BrowserWindow, Display, screen } from 'electron';
-import * as path from 'path'; // Keep for preload paths if still needed, or general path joining
+import { initializeBridge } from './core/bridge/bridge.service';
 console.log('--- [main.ts] Script execution started ---');
 
 // Configuration, Utilities, and Services
-import AthenaWidgetIpcHandlers from './apps/AthenaWidget/athena-widget.ipc';
-import { AthenaWidgetWindow } from './apps/AthenaWidget/athena-widget.main';
-import InputPillIpcHandlers from './apps/InputPill/input-pill.ipc'; // Added import
-import { InputPill } from './apps/InputPill/input-pill.main';
-import { initializeBridge } from './core/bridge/bridge.service';
-import { AnyCanvasEngine, AppIpcModule, AppMainProcessInstances } from './core/bridge/types'; // Added import
-import { APP_NAME, IS_DEV, VITE_DEV_SERVER_URL } from './core/config/app-config';
-import { initializeCanvasEngineAuto } from './core/engine/engine.service';
-import * as logger from './utils/logger';
+import { UIDiscoveryService } from '@core/app-discovery/main-process-discovery';
+import { initializeCanvasEngineAuto } from '@core/engine/engine.service';
 
 // Set the application name as early as possible.
 app.setName(APP_NAME);
 logger.info(`[App] App name set to "${APP_NAME}" at top-level.`);
 
-// Global references to UI components and the engine
-let athenaWidget: AthenaWidgetWindow | undefined;
-let inputPill: InputPill | undefined;
-let canvasEngineInstance: AnyCanvasEngine | undefined;
+// Global references to services and the engine
+let uiDiscoveryService: UIDiscoveryService | undefined;
+let canvasEngineInstance: CanvasEngine | undefined;
 
 const initializeApp = async (): Promise<void> => {
     logger.info(`[initializeApp] Current NODE_ENV: ${process.env.NODE_ENV}`);
@@ -32,54 +27,33 @@ const initializeApp = async (): Promise<void> => {
 
     const primaryDisplay: Display = screen.getPrimaryDisplay();
     
-    // Initialize UI Components
-    try {
-        inputPill = new InputPill(primaryDisplay, VITE_DEV_SERVER_URL, path.join(__dirname, '../apps/InputPill/preload.js'));
-        inputPill.init();
-        logger.info('[initializeApp] InputPill initialized.');
-    } catch (error) {
-        logger.error('[initializeApp] Failed to initialize InputPill:', error);
-    }
+    // Initialize UI Discovery Service
+    uiDiscoveryService = new UIDiscoveryService({
+        uiDir: 'src/ui',
+        primaryDisplay,
+        viteDevServerUrl: VITE_DEV_SERVER_URL,
+        preloadBasePath: __dirname,
+    });
 
+    // Discover and initialize all UI components automatically
+    const { appInstances, appModules } = await uiDiscoveryService.discoverAndInitializeUIComponents();
+    
+    // Initialize Core Engine
     try {
-        athenaWidget = new AthenaWidgetWindow(primaryDisplay, VITE_DEV_SERVER_URL, path.join(__dirname, '../apps/AthenaWidget/preload.js'));
-        athenaWidget.init();
-        logger.info('[initializeApp] AthenaWidgetWindow initialized.');
-    } catch (error) {
-        logger.error('[initializeApp] Failed to initialize AthenaWidgetWindow:', error);
-    }
-
-    // Initialize Core Engine - Auto-selects V1 or V2 based on environment
-    try {
-        // Pass the window instances to the engine initializer
+        // Get specific app instances for engine initialization
+        const inputPillInstance = appInstances.get('InputPill');
+        const athenaWidgetInstance = appInstances.get('AthenaWidget');
+        
         canvasEngineInstance = initializeCanvasEngineAuto(
-            inputPill?.window ?? undefined, 
-            athenaWidget?.window ?? undefined
+            inputPillInstance?.window ?? undefined, 
+            athenaWidgetInstance?.window ?? undefined
         );
         
         logger.info(`[initializeApp] Canvas Engine initialized successfully.`);
     } catch (error) {
         logger.error(`[initializeApp] Critical error during CanvasEngine initialization: ${error instanceof Error ? error.message : String(error)}. Application will exit.`);
         app.quit();
-        return; // Prevent further execution if engine fails
-    }
-
-    // Prepare for modular IPC handler registration
-    const appInstances: AppMainProcessInstances = new Map();
-    if (inputPill) {
-        appInstances.set('inputPill', inputPill);
-    }
-    if (athenaWidget) {
-        appInstances.set('athenaWidget', athenaWidget);
-    }
-
-    // This array will be populated with AppIpcModule implementations from each app
-    const appModules: AppIpcModule[] = []; 
-    if (inputPill) {
-        appModules.push(InputPillIpcHandlers);
-    }
-    if (athenaWidget) {
-        appModules.push(AthenaWidgetIpcHandlers);
+        return;
     }
 
     // Register IPC Handlers (after engine and UI components are ready)

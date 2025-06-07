@@ -1,15 +1,15 @@
 // src/apps/InputPill/input-pill.ipc.ts
+import { AppIpcModule, AppMainProcessInstances } from '@core/bridge/types';
+import { InputPill } from '@ui/platform/InputPill/inputpill.main'; // Specific type for appInstance
+import * as logger from '@utils/logger';
 import { IpcMain } from 'electron';
-import { AppIpcModule, AppMainProcessInstances } from '../../core/bridge/types';
-import * as logger from '../../utils/logger';
-import { InputPill } from './input-pill.main'; // Specific type for appInstance
 
 // Placeholder for a more robust event bus if we introduce one.
 // For now, we might listen to events directly on ipcMain if main-handlers.ts emits them,
 // or handle direct calls if main-handlers.ts is refactored to call app-specific functions.
 
 const InputPillIpcHandlers: AppIpcModule = {
-    moduleId: 'inputPill',
+    moduleId: 'InputPill',
 
     registerMainProcessHandlers: (
         ipcMainInstance: IpcMain,

@@ -1,8 +1,8 @@
 // src/apps/AthenaWidget/athena-widget.ipc.ts
+import { AppIpcModule, AppMainProcessInstances } from '@core/bridge/types';
+import { AthenaWidgetWindow } from '@ui/platform/AthenaWidget/athenawidget.main'; // Specific type for appInstance
+import * as logger from '@utils/logger';
 import { IpcMain, IpcMainEvent } from 'electron';
-import { AppIpcModule, AppMainProcessInstances } from '../../core/bridge/types';
-import * as logger from '../../utils/logger';
-import { AthenaWidgetWindow } from './athena-widget.main'; // Specific type for appInstance
 
 export const ATHENA_WIDGET_IPC_EVENTS = {
     USER_QUERY: 'ipc-main-event:athena-widget:user-query',
@@ -11,7 +11,7 @@ export const ATHENA_WIDGET_IPC_EVENTS = {
 };
 
 const AthenaWidgetIpcHandlers: AppIpcModule = {
-    moduleId: 'athenaWidget',
+    moduleId: 'AthenaWidget',
 
     registerMainProcessHandlers: (
         ipcMainInstance: IpcMain,

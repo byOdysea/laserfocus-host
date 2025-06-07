@@ -1,7 +1,7 @@
 // src/ui/athena-widget.ts
+import * as logger from '@utils/logger';
 import { BrowserWindow, Display, app } from 'electron';
 import * as path from 'path';
-import * as logger from '../../utils/logger';
 
 
 export class AthenaWidgetWindow {
@@ -32,10 +32,10 @@ export class AthenaWidgetWindow {
 
     init(): void {
         if (this.viteDevServerUrl) {
-            this.window.loadURL(`${this.viteDevServerUrl}/src/apps/AthenaWidget/index.html`);
+            this.window.loadURL(`${this.viteDevServerUrl}src/ui/platform/AthenaWidget/src/index.html`);
         } else {
             const basePath = app.getAppPath();
-            const rendererPath = path.join(basePath, 'dist/apps/AthenaWidget/index.html');
+            const rendererPath = path.join(basePath, 'dist/apps/system/AthenaWidget/src/index.html');
             logger.info(`[AthenaWidgetWindow] Attempting to load file from: ${rendererPath}`);
             this.window.loadFile(rendererPath);
         }
