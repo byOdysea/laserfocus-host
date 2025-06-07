@@ -5,10 +5,10 @@ import { StructuredTool, tool } from "@langchain/core/tools";
 import { ChatGoogleGenerativeAI, GoogleGenerativeAIChatCallOptions } from "@langchain/google-genai";
 import { END, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
 import { BrowserWindow, Rectangle, screen } from 'electron';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { z } from 'zod';
 import logger from '../../utils/logger';
+import { layoutStrategyPrompt } from './prompts/layout-strategy';
+import { systemBasePrompt } from './prompts/system-base';
 import { closeWindowSchema, openWindowSchema, resizeAndMoveWindowSchema } from './tools/canvas-tool-schemas';
 
 export interface CanvasWindowState {
@@ -57,6 +57,9 @@ export class CanvasEngineV2 {
     private canvasState: CanvasState = { windows: [] };
     private openWindows: Map<string, BrowserWindow> = new Map();
     private uiComponents: UIComponentBounds[] = [];
+    
+    // Abort signal management for memory leak prevention
+    private currentAbortController: AbortController | null = null;
     
     // Layout configuration
     private readonly layoutConfig: LayoutConfig = {
@@ -301,11 +304,11 @@ export class CanvasEngineV2 {
     }
 
     /**
-     * Build the system prompt from template files
+     * Build the system prompt from imported template constants
      */
     private buildSystemPrompt(): string {
-        const basePrompt = this.loadPromptFile('system-base.txt');
-        const layoutStrategy = this.loadPromptFile('layout-strategy.txt');
+        const basePrompt = systemBasePrompt;
+        const layoutStrategy = layoutStrategyPrompt;
         
         // Calculate layout parameters
         const layoutParams = this.calculateLayoutParameters();
@@ -344,85 +347,7 @@ export class CanvasEngineV2 {
         return `${basePrompt}\n\n${filledStrategy}`;
     }
 
-    /**
-     * Load a prompt file from the prompts directory with fallback
-     */
-    private loadPromptFile(filename: string): string {
-        const possiblePaths = [
-            join(__dirname, 'prompts', filename),
-            join(__dirname, '..', '..', 'core', 'engine', 'prompts', filename),
-            join(process.cwd(), 'src', 'core', 'engine', 'prompts', filename)
-        ];
-        
-        for (const filePath of possiblePaths) {
-            try {
-                return readFileSync(filePath, 'utf-8');
-            } catch (error) {
-                // Continue to next path
-            }
-        }
-        
-        logger.warn(`[CanvasEngine] Failed to load prompt file ${filename}, using fallback`);
-        return this.getFallbackPrompt(filename);
-    }
-    
-    /**
-     * Provide fallback prompts when files can't be loaded
-     */
-    private getFallbackPrompt(filename: string): string {
-        if (filename === 'system-base.txt') {
-            return `You are an AI assistant for LaserFocus, designed to help users manage browser windows.
 
-You can:
-- Open new browser windows with specific URLs (use open_browser_window)
-- Close existing browser windows (use close_browser_window)
-- Resize and move browser windows (use resize_and_move_window)
-- Create organized layouts of multiple windows
-
-IMPORTANT TOOL USAGE RULES:
-1. **URLs**: Always accept user URLs and let the tool handle normalization (the tool will automatically add https:// if needed)
-2. **resize_and_move_window**: Use separate parameters: windowId, x, y, width, height - NEVER use comma-separated strings
-3. **Parameter Names**: Use exact parameter names from tool schemas - windowId (not id), x, y, width, height
-4. **Data Types**: Ensure coordinates are numbers, not strings
-
-Tool Call Examples:
-- ✅ open_browser_window: {"url": "google.com", "x": 10, "y": 50, "width": 1070, "height": 776} (tool will normalize to https://google.com)
-- ✅ open_browser_window: {"url": "https://x.com", "x": 10, "y": 50, "width": 530, "height": 776}
-- ✅ resize_and_move_window: {"windowId": "window-3", "x": 10, "y": 50, "width": 530, "height": 776}
-- ❌ resize_and_move_window: {"input": "window-3,10,50,525,776"}
-
-Always acknowledge the user's request and use tools to fulfill it.`;
-        }
-        
-        if (filename === 'layout-strategy.txt') {
-            return `# Window Layout Strategy
-
-## Current State
-Screen: {{screenWidth}}x{{screenHeight}}
-UI Components: {{uiComponents}}
-Canvas State: {{canvasState}}
-
-## CRITICAL: Check Existing Windows
-Before positioning any new window, examine the canvas state above. If windows already exist, you MUST create a tiled layout - never place windows on top of each other.
-
-## Layout Guidelines
-- **First Window**: Use full width {{maxUsableWidth}}px at ({{defaultX}}, {{defaultY}})
-- **Multiple Windows**: Tile side by side, resize ALL existing windows to fit new layout
-- **Tiling Formula**: Width per window = floor(({{maxUsableWidth}} - {{windowGap}} * (total_windows - 1)) / total_windows)
-- **Example**: For 2 windows with maxUsableWidth=1070, windowGap=10: Each window gets 530px width
-- **Positions**: Window N at x = {{defaultX}} + (N * (width + {{windowGap}}))
-
-## Multi-Window Process
-1. Count existing windows from canvas state
-2. Calculate new width for ALL windows  
-3. Resize each existing window to new position/size
-4. Open new window at calculated position
-
-**REMEMBER**: Always tile side by side, never overlap windows.`;
-        }
-        
-        return '';
-    }
 
     /**
      * Calculate layout parameters based on screen and UI components
@@ -644,25 +569,179 @@ Before positioning any new window, examine the canvas state above. If windows al
     }
 
     /**
+     * Detect the type of request from user input
+     */
+    private detectRequestType(userInput: string): { type: 'open' | 'close_all' | 'close_specific' | 'other', target?: string } {
+        const lowerInput = userInput.toLowerCase().trim();
+        
+        // Close all patterns
+        if (lowerInput.match(/^(close\s+all|close\s+everything|close\s+all\s+windows)$/)) {
+            return { type: 'close_all' };
+        }
+        
+        // Close specific window patterns
+        const closeMatch = lowerInput.match(/^close\s+(.+)$/);
+        if (closeMatch) {
+            return { type: 'close_specific', target: closeMatch[1] };
+        }
+        
+        // Open patterns
+        const openMatch = lowerInput.match(/^open\s+(.+)$/);
+        if (openMatch) {
+            return { type: 'open', target: openMatch[1] };
+        }
+        
+        return { type: 'other' };
+    }
+
+    /**
+     * Check if the user's request was fulfilled
+     */
+    private isRequestFulfilled(userInput: string, initialWindowCount: number): boolean {
+        const request = this.detectRequestType(userInput);
+        
+        switch (request.type) {
+            case 'open':
+                // For open requests, check if new window was created with requested URL
+                if (this.canvasState.windows.length <= initialWindowCount) {
+                    logger.warn(`[CanvasEngine] Request unfulfilled: No new window opened for "${request.target}"`);
+                    return false;
+                }
+                
+                // Check if any window contains the requested URL
+                const hasMatchingWindow = this.canvasState.windows.some(window => {
+                    const windowUrl = window.url.toLowerCase();
+                    const requestUrlLower = (request.target || '').toLowerCase();
+                    return windowUrl.includes(requestUrlLower) || 
+                           windowUrl.includes(`//${requestUrlLower}`) ||
+                           windowUrl.includes(`https://${requestUrlLower}`) ||
+                           windowUrl.includes(`https://www.${requestUrlLower}`);
+                });
+                
+                if (!hasMatchingWindow) {
+                    logger.warn(`[CanvasEngine] Request unfulfilled: No window found for "${request.target}"`);
+                    return false;
+                }
+                return true;
+                
+            case 'close_all':
+                // For close all requests, check if all windows were closed
+                if (this.canvasState.windows.length > 0) {
+                    logger.warn(`[CanvasEngine] Request unfulfilled: ${this.canvasState.windows.length} windows still open after "close all"`);
+                    return false;
+                }
+                return true;
+                
+            case 'close_specific':
+                // For specific close requests, this is more complex to validate
+                // For now, assume fulfilled if we closed at least one window
+                if (this.canvasState.windows.length >= initialWindowCount) {
+                    logger.warn(`[CanvasEngine] Request unfulfilled: No windows were closed for "${request.target}"`);
+                    return false;
+                }
+                return true;
+                
+            case 'other':
+            default:
+                // For other requests (resize, move, etc.), assume fulfilled
+                return true;
+        }
+    }
+
+    /**
+     * Clean up abort signals to prevent memory leaks
+     */
+    private cleanupAbortSignal(): void {
+        if (this.currentAbortController) {
+            this.currentAbortController.abort();
+            this.currentAbortController = null;
+        }
+    }
+
+    /**
+     * Create a new abort controller for the current operation
+     */
+    private createAbortController(): AbortController {
+        this.cleanupAbortSignal();
+        this.currentAbortController = new AbortController();
+        return this.currentAbortController;
+    }
+
+    /**
      * Public API
      */
     async invoke(userInput: string, config: { recursionLimit?: number } = { recursionLimit: 25 }) {
         logger.info(`[CanvasEngine] Processing user input: "${userInput}"`);
         
-        // Include conversation history in the state so LLM maintains context
-        const initialState = {
-            messages: [...this.messages, new HumanMessage(userInput)]
-        };
+        const initialWindowCount = this.canvasState.windows.length;
+        
+        try {
+            // Create fresh abort controller for this operation
+            const abortController = this.createAbortController();
+            const configWithSignal = {
+                ...config,
+                signal: abortController.signal
+            };
+            
+            // Include conversation history in the state so LLM maintains context
+            const initialState = {
+                messages: [...this.messages, new HumanMessage(userInput)]
+            };
 
-        const finalState = await this.graph.invoke(initialState, config);
-        
-        // Store conversation history (only the new messages from this invocation)
-        const newMessages = finalState.messages.slice(this.messages.length);
-        this.messages.push(...newMessages);
-        
-        logger.info(`[CanvasEngine] Completed processing. Windows: ${this.canvasState.windows.length}, Messages: ${this.messages.length}`);
-        
-        return finalState;
+            const finalState = await this.graph.invoke(initialState, configWithSignal);
+            
+            // Store conversation history (only the new messages from this invocation)
+            const newMessages = finalState.messages.slice(this.messages.length);
+            this.messages.push(...newMessages);
+            
+            // Check if the user's request was actually fulfilled
+            if (!this.isRequestFulfilled(userInput, initialWindowCount)) {
+                logger.warn(`[CanvasEngine] Request not fulfilled, continuing conversation...`);
+                
+                // Create new abort controller for follow-up
+                const followUpController = this.createAbortController();
+                const followUpConfig = {
+                    recursionLimit: 10,
+                    signal: followUpController.signal
+                };
+                
+                // Generate appropriate follow-up message based on request type
+                const request = this.detectRequestType(userInput);
+                let followUpText = "Please complete the requested task.";
+                
+                switch (request.type) {
+                    case 'open':
+                        followUpText = `The requested window for "${request.target}" was not opened yet. Please complete the task by opening the requested window.`;
+                        break;
+                    case 'close_all':
+                        followUpText = `Not all windows were closed. Please continue closing all remaining windows to complete the "close all" request.`;
+                        break;
+                    case 'close_specific':
+                        followUpText = `The window for "${request.target}" was not closed yet. Please complete the task by closing the requested window.`;
+                        break;
+                }
+                
+                const followUpMessage = new HumanMessage(followUpText);
+                const continueState = {
+                    messages: [...this.messages, followUpMessage]
+                };
+                
+                const continuedState = await this.graph.invoke(continueState, followUpConfig);
+                
+                // Update messages with the continued conversation
+                const additionalMessages = continuedState.messages.slice(this.messages.length);
+                this.messages.push(...additionalMessages);
+                
+                logger.info(`[CanvasEngine] Continued processing to ensure completion`);
+            }
+            
+            logger.info(`[CanvasEngine] Completed processing. Windows: ${this.canvasState.windows.length}, Messages: ${this.messages.length}`);
+            
+            return finalState;
+        } finally {
+            // Always clean up abort signals when operation completes
+            this.cleanupAbortSignal();
+        }
     }
 
     /**
@@ -684,31 +763,24 @@ Before positioning any new window, examine the canvas state above. If windows al
      */
     clearHistory(): void {
         this.messages = [];
+        this.cleanupAbortSignal(); // Clean up any pending operations
         logger.info('[CanvasEngine] Conversation history cleared');
     }
 
     /**
-     * Parse malformed comma-separated resize arguments from LLM
-     * Format: "windowId,x,y,width,height"
+     * Cleanup method to call when destroying the engine
      */
-    private parseResizeArguments(input: string): z.infer<typeof resizeAndMoveWindowSchema> | null {
-        try {
-            const parts = input.split(',').map(part => part.trim());
-            if (parts.length === 5) {
-                const [windowId, xStr, yStr, widthStr, heightStr] = parts;
-                const x = parseInt(xStr, 10);
-                const y = parseInt(yStr, 10);
-                const width = parseInt(widthStr, 10);
-                const height = parseInt(heightStr, 10);
-                
-                // Validate that all numbers parsed correctly
-                if (!isNaN(x) && !isNaN(y) && !isNaN(width) && !isNaN(height)) {
-                    return { windowId, x, y, width, height };
-                }
+    destroy(): void {
+        this.cleanupAbortSignal();
+        this.openWindows.forEach(window => {
+            if (!window.isDestroyed()) {
+                window.close();
             }
-        } catch (error) {
-            logger.warn(`[CanvasEngine] Error parsing resize arguments: ${error}`);
-        }
-        return null;
+        });
+        this.openWindows.clear();
+        this.canvasState.windows = [];
+        logger.info('[CanvasEngine] Engine destroyed and resources cleaned up');
     }
+
+
 } 
