@@ -1,6 +1,6 @@
 {
   "name": "laserfocus",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "canvas engine mvp",
   "main": "dist/main/main.js",
   "scripts": {
