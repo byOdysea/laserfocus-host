@@ -11,7 +11,7 @@ import { InputPill } from './apps/InputPill/input-pill.main';
 import { initializeBridge } from './core/bridge/bridge.service';
 import { AnyCanvasEngine, AppIpcModule, AppMainProcessInstances } from './core/bridge/types'; // Added import
 import { APP_NAME, IS_DEV, VITE_DEV_SERVER_URL } from './core/config/app-config';
-import { getCurrentEngineVersion, initializeCanvasEngineAuto } from './core/engine/engine.service';
+import { initializeCanvasEngineAuto } from './core/engine/engine.service';
 import * as logger from './utils/logger';
 
 // Set the application name as early as possible.
@@ -57,8 +57,7 @@ const initializeApp = async (): Promise<void> => {
             athenaWidget?.window ?? undefined
         );
         
-        const engineVersion = getCurrentEngineVersion();
-        logger.info(`[initializeApp] Canvas Engine ${engineVersion} initialized successfully.`);
+        logger.info(`[initializeApp] Canvas Engine initialized successfully.`);
     } catch (error) {
         logger.error(`[initializeApp] Critical error during CanvasEngine initialization: ${error instanceof Error ? error.message : String(error)}. Application will exit.`);
         app.quit();

@@ -1,14 +1,12 @@
 // src/core/bridge/types.ts
 import { IpcMain } from 'electron';
 import { CanvasEngine } from '../engine/canvas-engine';
-import { CanvasEngineV2 } from '../engine/canvas-engine-v2';
 
 // A map to hold main process instances of different apps, keyed by a unique app identifier.
 // This is a placeholder for a more robust service location/dependency injection if needed.
 export type AppMainProcessInstances = Map<string, any>;
 
-// Union type to support both engine versions during transition
-export type AnyCanvasEngine = CanvasEngine | CanvasEngineV2;
+export type AnyCanvasEngine = CanvasEngine;
 
 export interface AppIpcModule {
     /**

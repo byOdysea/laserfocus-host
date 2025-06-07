@@ -1,10 +1,7 @@
 // src/core/bridge/bridge.service.ts
 import { ipcMain } from 'electron'; // Import ipcMain directly
 import * as logger from '../../utils/logger';
-import { CanvasEngine } from '../engine/canvas-engine';
-import { CanvasEngineV2 } from '../engine/canvas-engine-v2';
 // We no longer import specific app types here for the initializeBridge signature
-import { registerMainProcessEventHandlers } from './main-handlers'; // This will also need to change or its role will diminish
 import { AnyCanvasEngine, AppIpcModule, AppMainProcessInstances } from './types'; // Import the new types
 
 /**
@@ -22,30 +19,12 @@ export const initializeBridge = (
 ): void => {
     logger.info('[BridgeService] Initializing IPC bridge with modular app handlers...');
     
-    // Log which engine version is being used
-    const engineVersion = canvasEngine instanceof CanvasEngineV2 ? 'V2' : 'V1';
-    logger.info(`[BridgeService] Using Canvas Engine ${engineVersion}`);
+    logger.info(`[BridgeService] Using Canvas Engine`);
     
     try {
-        // 1. Register Core/Global IPC Handlers
-        // For backwards compatibility, we still support the legacy main-handlers approach
-        // but only if we're using the V1 engine
-        if (canvasEngine instanceof CanvasEngine) {
-            logger.info('[BridgeService] Registering legacy main process handlers for Canvas Engine V1');
-            const inputPillInstance = appInstances.get('inputPill');
-            const athenaWidgetInstance = appInstances.get('athenaWidget');
-            
-            registerMainProcessEventHandlers(
-                canvasEngine,
-                inputPillInstance, 
-                athenaWidgetInstance 
-            );
-            logger.info('[BridgeService] Legacy main process handlers registered.');
-        } else {
-            logger.info('[BridgeService] Canvas Engine V2 detected - using modern IPC patterns only');
-            // For V2, we register a modern 'run-agent' handler that uses the new interface
-            registerModernAgentHandler(canvasEngine, appInstances);
-        }
+        // Register the modern 'run-agent' handler
+        logger.info('[BridgeService] Canvas Engine detected - using modern IPC patterns');
+        registerModernAgentHandler(canvasEngine, appInstances);
 
         // 2. Register App-Specific IPC Handlers
         appModules.forEach(module => {
@@ -77,10 +56,10 @@ export const initializeBridge = (
 };
 
 /**
- * Registers a modern 'run-agent' handler for Canvas Engine V2
+ * Registers the modern 'run-agent' handler for Canvas Engine
  */
 function registerModernAgentHandler(
-    canvasEngine: CanvasEngineV2, 
+    canvasEngine: CanvasEngine, 
     appInstances: AppMainProcessInstances
 ): void {
     // Pragmatic: import at the top to avoid dynamic require issues
@@ -105,7 +84,7 @@ function registerModernAgentHandler(
             // Send processing notification to InputPill
             event.sender.send('agent-processing');
             
-            // Use Canvas Engine V2's invoke method
+            // Use Canvas Engine's invoke method
             const result = await canvasEngine.invoke(query);
             
             // Extract response content from the result
@@ -139,5 +118,5 @@ function registerModernAgentHandler(
         }
     });
     
-    logger.info('[BridgeService] Modern run-agent handler registered for Canvas Engine V2');
+    logger.info('[BridgeService] Modern run-agent handler registered for Canvas Engine');
 }

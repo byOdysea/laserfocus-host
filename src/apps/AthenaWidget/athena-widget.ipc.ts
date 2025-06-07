@@ -1,7 +1,6 @@
 // src/apps/AthenaWidget/athena-widget.ipc.ts
 import { IpcMain, IpcMainEvent } from 'electron';
 import { AppIpcModule, AppMainProcessInstances } from '../../core/bridge/types';
-import { CanvasEngineV2 } from '../../core/engine/canvas-engine-v2';
 import * as logger from '../../utils/logger';
 import { AthenaWidgetWindow } from './athena-widget.main'; // Specific type for appInstance
 
@@ -22,9 +21,7 @@ const AthenaWidgetIpcHandlers: AppIpcModule = {
     ) => {
         logger.info(`[AthenaWidget.ipc] Registering IPC handlers for ${AthenaWidgetIpcHandlers.moduleId}`);
         
-        // Log which engine version is being used
-        const engineVersion = canvasEngine instanceof CanvasEngineV2 ? 'V2' : 'V1';
-        logger.info(`[AthenaWidget.ipc] Canvas Engine ${engineVersion} detected for AthenaWidget handlers`);
+        logger.info(`[AthenaWidget.ipc] Canvas Engine detected for AthenaWidget handlers`);
 
         // Handler for user queries
         ipcMainInstance.on(ATHENA_WIDGET_IPC_EVENTS.USER_QUERY, (event: IpcMainEvent) => { // 'event' will be the actual query string
