@@ -1,7 +1,7 @@
+import { DEFAULT_MODEL_NAME } from '@core/config/app-config';
+import { CanvasEngine } from '@core/engine/canvas-engine';
+import * as logger from '@utils/logger';
 import { BrowserWindow } from 'electron';
-import * as logger from '../../utils/logger';
-import { DEFAULT_MODEL_NAME } from '../config/app-config';
-import { CanvasEngine } from './canvas-engine';
 
 let engineInstance: CanvasEngine | undefined;
 

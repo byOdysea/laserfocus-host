@@ -108,6 +108,8 @@ MANDATORY Action Sequence (ALL 3 REQUIRED):
 1. resize_and_move_window: {"windowId": "window-X", "x": {{defaultX}}, "y": {{defaultY}}, "width": {{maxUsableWidth}}, "height": 388}
 2. resize_and_move_window: {"windowId": "window-Y", "x": {{defaultX}}, "y": 448, "width": 530, "height": 388}  
 3. open_browser_window: {"url": "USER_URL", "x": 550, "y": 448, "width": 530, "height": 388} ← MUST EXECUTE THIS!
+
+🚨 CRITICAL: Use "windowId" parameter, NOT "input"!
 \`\`\`
 
 🚨 **CRITICAL**: Steps 1 & 2 are NOT complete without step 3! You MUST call open_browser_window!
@@ -129,12 +131,15 @@ Action Sequence:
 ### ✅ DO:
 - **Complete every step** in your planned sequence
 - **Open the new window** after resizing existing ones
-- **Use exact parameter names**: windowId, x, y, width, height
+- **Use EXACT parameter names**: 
+  - ✅ "windowId" (NOT "input", NOT "id", NOT "window")
+  - ✅ "x", "y", "width", "height" (numbers only)
 - **Provide clear coordinates** as numbers, not strings
 - **Choose layouts that maximize usability**
 
 ### ❌ DON'T:
 - Stop after resizing without opening new window
+- Use wrong parameter names ("input" instead of "windowId")
 - Use comma-separated strings for coordinates
 - Overlap windows on top of each other
 - Ignore the current canvas state

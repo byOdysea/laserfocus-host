@@ -1,15 +1,15 @@
-import { BaseLanguageModelInput } from "@langchain/core/language_models/base";
-import { AIMessage, AIMessageChunk, BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
-import { Runnable } from "@langchain/core/runnables";
+import { layoutStrategyPrompt } from '@core/engine/prompts/layout-strategy';
+import { systemBasePrompt } from '@core/engine/prompts/system-base';
+import { closeWindowSchema, openWindowSchema, resizeAndMoveWindowSchema } from '@core/engine/tools/canvas-tool-schemas';
+import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { StructuredTool, tool } from "@langchain/core/tools";
-import { ChatGoogleGenerativeAI, GoogleGenerativeAIChatCallOptions } from "@langchain/google-genai";
-import { END, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { END, MemorySaver, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import logger from '@utils/logger';
 import { BrowserWindow, Rectangle, screen } from 'electron';
+import { setMaxListeners } from 'events';
 import { z } from 'zod';
-import logger from '../../utils/logger';
-import { layoutStrategyPrompt } from './prompts/layout-strategy';
-import { systemBasePrompt } from './prompts/system-base';
-import { closeWindowSchema, openWindowSchema, resizeAndMoveWindowSchema } from './tools/canvas-tool-schemas';
 
 export interface CanvasWindowState {
     id: string;
@@ -40,26 +40,60 @@ export interface LayoutConfig {
     minWindowWidth: number;
 }
 
+export interface LLMConfig {
+    provider: 'google' | 'openai' | 'anthropic';
+    apiKey: string;
+    modelName: string;
+    temperature?: number;
+    maxTokens?: number;
+}
+
+// TODO: Provider abstraction for future migration to OpenAI/Claude
+// Will re-enable when migrating from Gemini
+
 /**
  * Canvas Engine for LaserFocus
- * Manages browser windows using LangGraph with proper tool calling
+ * Manages browser windows using LangGraph with proper persistence
+ * 
+ * ⚠️  TECHNICAL DEBT WARNING ⚠️
+ * 
+ * This implementation contains significant hardcoded workarounds for Google Gemini's
+ * poor schema adherence. These hacks should NOT be part of the final design and
+ * must be removed when migrating to better LLMs (OpenAI GPT-4, Claude, etc.).
+ * 
+ * GEMINI-SPECIFIC ISSUES BEING WORKED AROUND:
+ * 1. Schema violations: Sends "input" instead of "windowId" parameter names
+ * 2. Parameter filtering: Zod strips invalid fields, causing data loss
+ * 3. Unpredictable argument formats: Sometimes string, sometimes object
+ * 4. Poor tool planning: Doesn't respect schema parameter requirements
+ * 
+ * WORKAROUNDS IMPLEMENTED (TO BE REMOVED):
+ * - Parameter name auto-fixing (input → windowId)
+ * - Intelligent layout fallbacks when parameters are lost
+ * - Predictive 3-window layout detection
+ * - String argument handling for malformed tool calls
+ * 
+ * MIGRATION PATH:
+ * When switching to OpenAI/Claude:
+ * 1. Remove all "GEMINI-SPECIFIC FIX" code blocks
+ * 2. Restore clean schema-based parameter handling
+ * 3. Remove fallback layout calculations
+ * 4. Simplify resizeAndMoveWindow() to standard implementation
+ * 
+ * The core architecture (LangGraph, tool system, state management) is sound
+ * and provider-agnostic. Only the parameter handling workarounds need removal.
  */
 export class CanvasEngine {
-    private readonly apiKey: string;
-    private readonly modelName: string;
+    private readonly llmConfig: LLMConfig;
     private readonly workArea: Rectangle;
-    private readonly llm: Runnable<BaseLanguageModelInput, AIMessageChunk, GoogleGenerativeAIChatCallOptions>;
     private readonly tools: StructuredTool[];
     private readonly graph: any;
+    private readonly threadId: string = "canvas-session"; // Persistent conversation thread
     
-    // State management
-    private messages: BaseMessage[] = [];
+    // State management - LangGraph handles conversation history automatically
     private canvasState: CanvasState = { windows: [] };
     private openWindows: Map<string, BrowserWindow> = new Map();
     private uiComponents: UIComponentBounds[] = [];
-    
-    // Track active operations for cleanup on destroy
-    private activeControllers: Set<AbortController> = new Set();
     
     // Layout configuration
     private readonly layoutConfig: LayoutConfig = {
@@ -76,17 +110,34 @@ export class CanvasEngine {
         inputPillWindow?: BrowserWindow,
         athenaWidgetWindow?: BrowserWindow
     ) {
-        this.workArea = screen.getPrimaryDisplay().workArea; 
-        this.apiKey = apiKey || process.env.GOOGLE_API_KEY || "";
+        // Increase EventTarget max listeners to handle multiple LLM calls per conversation
+        setMaxListeners(50);
         
-        if (!this.apiKey) {
+        this.workArea = screen.getPrimaryDisplay().workArea; 
+        
+        // Store config for future provider abstraction
+        const resolvedApiKey = apiKey || process.env.GOOGLE_API_KEY || "";
+        if (!resolvedApiKey) {
             throw new Error("GOOGLE_API_KEY is required");
         }
         
-        this.modelName = modelName;
+        // Basic API key validation
+        if (!resolvedApiKey.startsWith('AIza')) {
+            logger.warn('[CanvasEngine] API key does not look like a valid Google AI key (should start with AIza)');
+        }
+        
+        logger.info(`[CanvasEngine] Using API key: ${resolvedApiKey.substring(0, 8)}...${resolvedApiKey.substring(resolvedApiKey.length - 4)}`);
+        
+        this.llmConfig = {
+            provider: 'google',
+            apiKey: resolvedApiKey,
+            modelName,
+            temperature: 0.2,
+            maxTokens: 2048
+        };
+        
         this.setupUIComponents(inputPillWindow, athenaWidgetWindow);
         this.tools = this.createTools(externalTools);
-        this.llm = this.createLLM();
         this.graph = this.buildGraph();
     }
 
@@ -142,20 +193,11 @@ export class CanvasEngine {
         const resizeMoveTool = tool(
             async (args: z.infer<typeof resizeAndMoveWindowSchema>) => {
                 logger.info(`[CanvasEngine] Resizing/moving window: ${JSON.stringify(args)}`);
-                logger.info(`[CanvasEngine] Resize tool arguments received:`, args);
-                logger.info(`[CanvasEngine] Type of args: ${typeof args}`);
-                logger.info(`[CanvasEngine] Args keys: ${args ? Object.keys(args) : 'undefined/null'}`);
-                
-                if (!args) {
-                    logger.error(`[CanvasEngine] Resize tool received null/undefined arguments`);
-                    return { id: 'unknown', status: 'error', message: 'No arguments provided' };
-                }
-                
                 return this.resizeAndMoveWindow(args);
             },
             {
                 name: "resize_and_move_window",
-                description: "Resizes and/or moves an existing browser window by ID. Use separate parameters: windowId, x, y, width, height",
+                description: "Resizes and/or moves an existing browser window. REQUIRED: windowId parameter (the window ID to modify). OPTIONAL: x, y, width, height parameters.",
                 schema: resizeAndMoveWindowSchema
             }
         );
@@ -165,89 +207,63 @@ export class CanvasEngine {
     }
 
     /**
-     * Create and configure the LLM with tool binding
-     */
-    private createLLM(): Runnable<BaseLanguageModelInput, AIMessageChunk, GoogleGenerativeAIChatCallOptions> {
-        return new ChatGoogleGenerativeAI({
-            apiKey: this.apiKey,
-            model: this.modelName,
-            temperature: 0.2,
-            maxOutputTokens: 2048,
-        }).bindTools(this.tools);
-    }
-
-    /**
-     * Build the LangGraph workflow
+     * Build the LangGraph workflow with persistent memory
      */
     private buildGraph() {
-        // Custom tool execution instead of ToolNode to handle Google AI format properly
-        const executeTools = async (state: typeof MessagesAnnotation.State) => {
-            const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
-            const toolResults: any[] = [];
+        // Create LLM with tool binding - GEMINI-OPTIMIZED for now, provider-agnostic later
+        const model = new ChatGoogleGenerativeAI({
+            apiKey: this.llmConfig.apiKey,
+            model: this.llmConfig.modelName,
+            temperature: this.llmConfig.temperature,
+            maxOutputTokens: this.llmConfig.maxTokens,
+        }).bindTools(this.tools);
+
+        // Use standard LangGraph ToolNode - the architecturally correct approach
+        const toolNode = new ToolNode(this.tools);
+
+        // Simple conditional logic: tool calls = continue, no tool calls = end  
+        const shouldContinue = (state: typeof MessagesAnnotation.State) => {
+            const lastMessage = state.messages[state.messages.length - 1];
             
-            if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
-                logger.info(`[CanvasEngine] Executing ${lastMessage.tool_calls.length} tool calls`);
-                
-                for (const toolCall of lastMessage.tool_calls) {
-                    logger.info(`[CanvasEngine] Executing tool: ${toolCall.name} with args: ${JSON.stringify(toolCall.args)}`);
-                    
-                    try {
-                        let result;
-                        
-                        // Call our tool functions directly
-                        switch (toolCall.name) {
-                            case 'open_browser_window':
-                                const openArgs = openWindowSchema.parse(toolCall.args);
-                                result = await this.openWindow(openArgs);
-                                break;
-                            case 'close_browser_window':
-                                const closeArgs = closeWindowSchema.parse(toolCall.args);
-                                result = this.closeWindow(closeArgs);
-                                break;
-                            case 'resize_and_move_window':
-                                const resizeArgs = resizeAndMoveWindowSchema.parse(toolCall.args);
-                                result = this.resizeAndMoveWindow(resizeArgs);
-                                break;
-                            default:
-                                // For external tools, try using tool.invoke
-                                const tool = this.tools.find(t => t.name === toolCall.name);
-                                if (tool) {
-                                    result = await tool.invoke(toolCall.args);
-                                } else {
-                                    logger.error(`[CanvasEngine] Tool not found: ${toolCall.name}`);
-                                    result = { error: `Tool not found: ${toolCall.name}` };
-                                }
-                        }
-                        
-                        logger.info(`[CanvasEngine] Tool ${toolCall.name} result: ${JSON.stringify(result)}`);
-                        toolResults.push(result);
-                    } catch (error: any) {
-                        logger.error(`[CanvasEngine] Error executing tool ${toolCall.name}:`, error);
-                        toolResults.push({ error: error.message });
-                    }
+            if (lastMessage instanceof AIMessage && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+                logger.info("[CanvasEngine] Agent wants to use tools, routing to tools node");
+                return "tools";
+            }
+            
+            // Check if we just had tool execution in the last few messages
+            const recentMessages = state.messages.slice(-4); 
+            const hasRecentToolMessage = recentMessages.some(msg => {
+                if (msg && typeof msg === 'object' && 'type' in msg) {
+                    return msg.type === 'tool';
+                }
+                return false;
+            });
+            
+            // If we just executed tools and agent responds, allow natural ending
+            if (hasRecentToolMessage && lastMessage instanceof AIMessage && 
+                (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0)) {
+                logger.info("[CanvasEngine] Agent responded after tool execution - ending conversation");
+                return END;
+            }
+            
+            // Count forced continuations for safety limit
+            const agentMessages = state.messages.filter(msg => msg instanceof AIMessage);
+            const forcedContinuations = agentMessages.filter(msg => 
+                !msg.tool_calls || msg.tool_calls.length === 0
+            ).length;
+            
+            // Safety valve: don't force too many continuations
+            if (lastMessage instanceof AIMessage && (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0)) {
+                if (forcedContinuations >= 2) {
+                    logger.info("[CanvasEngine] Too many forced continuations, allowing natural end");
+                    return END;
+                } else {
+                    logger.warn(`[CanvasEngine] Agent provided no tool calls (attempt ${forcedContinuations + 1}/2) - forcing continuation`);
+                    return "agent";
                 }
             }
             
-            // Create a tool message with the results
-            const toolMessage = new AIMessage({
-                content: `Tool execution completed. Results: ${JSON.stringify(toolResults)}`,
-                tool_calls: []
-            });
-            
-            return { messages: [toolMessage] };
-        };
-
-        const shouldContinue = (state: typeof MessagesAnnotation.State) => {
-            const lastMessage = state.messages[state.messages.length - 1];
-            if (lastMessage instanceof AIMessage && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
-                logger.info("[CanvasEngine] Agent wants to use tools, routing to tools node");
-                logger.info(`[CanvasEngine] Tool calls detected: ${lastMessage.tool_calls.length}`);
-                lastMessage.tool_calls.forEach((call, idx) => {
-                    logger.info(`[CanvasEngine] Tool call ${idx}: name=${call.name}, args=${JSON.stringify(call.args)}`);
-                });
-                return "tools";
-            }
-            logger.info("[CanvasEngine] Agent finished, ending conversation");
+            logger.info("[CanvasEngine] Default end condition reached");
             return END;
         };
 
@@ -256,9 +272,40 @@ export class CanvasEngine {
             const messages = [new SystemMessage(systemPrompt), ...state.messages];
             
             logger.info(`[CanvasEngine] Calling LLM with ${messages.length} messages`);
+            logger.info(`[CanvasEngine] API Key configured: ${this.llmConfig.apiKey ? 'YES' : 'NO'}`);
+            logger.info(`[CanvasEngine] Model: ${this.llmConfig.modelName}`);
             
             try {
-                const response = await this.llm.invoke(messages) as AIMessage;
+                // Add timeout to catch hanging requests with proper cleanup
+                const abortController = new AbortController();
+                const timeoutId = setTimeout(() => {
+                    abortController.abort();
+                }, 30000);
+                
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    abortController.signal.addEventListener('abort', () => {
+                        reject(new Error('LLM request timeout after 30 seconds'));
+                    });
+                });
+                
+                let response: AIMessage;
+                try {
+                    response = await Promise.race([
+                        model.invoke(messages, { signal: abortController.signal }).catch(error => {
+                            if (error.name === 'AbortError') {
+                                throw new Error('LLM request timeout after 30 seconds');
+                            }
+                            throw error;
+                        }),
+                        timeoutPromise
+                    ]) as AIMessage;
+                } finally {
+                    // Always clean up resources
+                    clearTimeout(timeoutId);
+                    if (!abortController.signal.aborted) {
+                        abortController.abort();
+                    }
+                }
                 
                 // Validate response structure
                 if (!response || typeof response !== 'object') {
@@ -283,24 +330,20 @@ export class CanvasEngine {
             }
         };
 
-        const updateCanvasState = (state: typeof MessagesAnnotation.State) => {
-            this.updateCanvasStateFromMessages(state.messages);
-            return {};
-        };
-
         const workflow = new StateGraph(MessagesAnnotation)
             .addNode("agent", callAgent)
-            .addNode("tools", executeTools)
-            .addNode("update_canvas", updateCanvasState)
+            .addNode("tools", toolNode)
             .addEdge(START, "agent")
             .addConditionalEdges("agent", shouldContinue, {
                 tools: "tools",
+                agent: "agent",  // Allow agent→agent looping for forced continuation
                 [END]: END
             })
-            .addEdge("tools", "update_canvas")
-            .addEdge("update_canvas", "agent");
+            .addEdge("tools", "agent");
 
-        return workflow.compile();
+        // Compile with persistent memory checkpointer
+        const checkpointer = new MemorySaver();
+        return workflow.compile({ checkpointer });
     }
 
     /**
@@ -346,8 +389,6 @@ export class CanvasEngine {
 
         return `${basePrompt}\n\n${filledStrategy}`;
     }
-
-
 
     /**
      * Calculate layout parameters based on screen and UI components
@@ -503,7 +544,93 @@ export class CanvasEngine {
     }
 
     private resizeAndMoveWindow(args: z.infer<typeof resizeAndMoveWindowSchema>): { id: string; status: string; x?: number; y?: number; width?: number; height?: number } {
-        const { windowId, x, y, width, height } = args;
+        // ======================================================================
+        // 🚨 GEMINI-SPECIFIC WORKAROUND - REMOVE WHEN MIGRATING TO OPENAI/CLAUDE
+        // ======================================================================
+        // Handles Gemini's schema violations where it sends "input" instead of "windowId"
+        // and Zod filtering that causes parameter loss. This entire block should be
+        // replaced with simple destructuring: const { windowId, x, y, width, height } = args;
+        let windowId: string | undefined;
+        let x: number | undefined, y: number | undefined, width: number | undefined, height: number | undefined;
+        
+        logger.info(`[CanvasEngine] Raw args type: ${typeof args}, value: ${JSON.stringify(args)}`);
+        
+        // Handle different argument formats due to Gemini schema violations
+        if (typeof args === 'string') {
+            // LangChain sometimes passes just the windowId as a string when schema validation partially fails
+            windowId = args;
+            logger.info(`[CanvasEngine] Args received as string (windowId): "${windowId}"`);
+        } else if (typeof args === 'object' && args !== null) {
+            const rawArgs = args as any;
+            // Try multiple field names that Gemini might use
+            windowId = args.windowId || rawArgs.input || rawArgs.id || rawArgs.windowId;
+            x = args.x;
+            y = args.y; 
+            width = args.width;
+            height = args.height;
+            
+            logger.info(`[CanvasEngine] Args received as object - windowId: "${args.windowId}", input: "${rawArgs.input}", final: "${windowId}"`);
+        }
+        
+        if (!windowId) {
+            logger.error(`[CanvasEngine] No valid windowId found in args: ${JSON.stringify(args)}`);
+            return { id: 'unknown', status: 'missing_id' };
+        }
+
+        // ======================================================================
+        // 🚨 GEMINI-SPECIFIC WORKAROUND - REMOVE WHEN MIGRATING TO OPENAI/CLAUDE  
+        // ======================================================================
+        // When Gemini's schema violations cause parameter loss, this provides intelligent
+        // layout fallbacks. With proper LLMs, this entire block becomes unnecessary as
+        // parameters will be correctly provided by the LLM.
+        if (typeof args === 'string' || (x === undefined && y === undefined && width === undefined && height === undefined)) {
+            logger.info(`[CanvasEngine] Missing resize parameters due to schema filtering. Calculating smart defaults.`);
+            
+            const layoutParams = this.calculateLayoutParameters();
+            const windowCount = this.canvasState.windows.length;
+            const windowIndex = this.canvasState.windows.findIndex(w => w.id === windowId);
+            
+            logger.info(`[CanvasEngine] Context: ${windowCount} windows total, resizing window ${windowIndex + 1}`);
+            
+            // Detect if we're preparing for a 3+ window layout by checking recent conversation
+            // If we're resizing existing windows, Gemini is likely preparing for a new window
+            const isPreparingForNewWindow = windowCount >= 2; // Assume 3-window layout if resizing with 2+ windows
+            const targetLayout = isPreparingForNewWindow ? 3 : windowCount + 1;
+            
+            logger.info(`[CanvasEngine] Detected layout intent: ${targetLayout}-window layout (preparing: ${isPreparingForNewWindow})`);
+            
+            // Smart layout based on predicted final layout
+            if (targetLayout <= 2) {
+                // 2-window side-by-side layout
+                x = layoutParams.defaultX; 
+                y = layoutParams.defaultY;   
+                width = Math.floor(layoutParams.maxUsableWidth / 2) - Math.floor(this.layoutConfig.windowGap / 2);
+                height = layoutParams.defaultHeight;
+                                 logger.info(`[CanvasEngine] Using 2-window side-by-side layout`);
+             } else {
+                 // 3+ window layout: first window takes top half, others split bottom
+                 if (windowIndex === 0) {
+                     // First window: full width, top half
+                     x = layoutParams.defaultX;
+                     y = layoutParams.defaultY;
+                     width = layoutParams.maxUsableWidth;
+                     height = Math.floor(layoutParams.defaultHeight / 2) - Math.floor(this.layoutConfig.windowGap / 2);
+                     logger.info(`[CanvasEngine] Using 3-window layout: first window (top half)`);
+                 } else {
+                     // Other windows: split bottom half
+                     const expectedBottomWindows = Math.max(2, targetLayout - 1); // At least 2 bottom windows for 3+ layout
+                     const bottomWidth = Math.floor(layoutParams.maxUsableWidth / expectedBottomWindows) - Math.floor(this.layoutConfig.windowGap / 2);
+                     x = layoutParams.defaultX + (windowIndex - 1) * (bottomWidth + this.layoutConfig.windowGap);
+                     y = layoutParams.defaultY + Math.floor(layoutParams.defaultHeight / 2) + this.layoutConfig.windowGap;
+                     width = bottomWidth;
+                     height = Math.floor(layoutParams.defaultHeight / 2) - Math.floor(this.layoutConfig.windowGap / 2);
+                     logger.info(`[CanvasEngine] Using 3-window layout: bottom window ${windowIndex} (expecting ${expectedBottomWindows} bottom windows)`);
+                 }
+            }
+            
+            logger.info(`[CanvasEngine] Using smart fallback resize: x=${x}, y=${y}, width=${width}, height=${height}`);
+        }
+
         const windowInstance = this.openWindows.get(windowId);
         
         if (!windowInstance) {
@@ -559,200 +686,85 @@ export class CanvasEngine {
         }
     }
 
-    /**
-     * Update canvas state from tool execution messages
-     */
-    private updateCanvasStateFromMessages(messages: BaseMessage[]): void {
-        // The canvas state is already updated by the tool implementations
-        // This method can be used for additional state synchronization if needed
-        logger.info(`[CanvasEngine] Canvas state updated. Current windows: ${this.canvasState.windows.length}`);
-    }
+
 
     /**
-     * Detect the type of request from user input
+     * Send user input to the persistent conversational agent
+     * Uses LangGraph's built-in persistence for conversation memory
      */
-    private detectRequestType(userInput: string): { type: 'open' | 'close_all' | 'close_specific' | 'other', target?: string } {
-        const lowerInput = userInput.toLowerCase().trim();
-        
-        // Close all patterns
-        if (lowerInput.match(/^(close\s+all|close\s+everything|close\s+all\s+windows)$/)) {
-            return { type: 'close_all' };
-        }
-        
-        // Close specific window patterns
-        const closeMatch = lowerInput.match(/^close\s+(.+)$/);
-        if (closeMatch) {
-            return { type: 'close_specific', target: closeMatch[1] };
-        }
-        
-        // Open patterns
-        const openMatch = lowerInput.match(/^open\s+(.+)$/);
-        if (openMatch) {
-            return { type: 'open', target: openMatch[1] };
-        }
-        
-        return { type: 'other' };
-    }
-
-    /**
-     * Check if the user's request was fulfilled
-     */
-    private isRequestFulfilled(userInput: string, initialWindowCount: number): boolean {
-        const request = this.detectRequestType(userInput);
-        
-        switch (request.type) {
-            case 'open':
-                // For open requests, check if new window was created with requested URL
-                if (this.canvasState.windows.length <= initialWindowCount) {
-                    logger.warn(`[CanvasEngine] Request unfulfilled: No new window opened for "${request.target}"`);
-                    return false;
-                }
-                
-                // Check if any window contains the requested URL
-                const hasMatchingWindow = this.canvasState.windows.some(window => {
-                    const windowUrl = window.url.toLowerCase();
-                    const requestUrlLower = (request.target || '').toLowerCase();
-                    return windowUrl.includes(requestUrlLower) || 
-                           windowUrl.includes(`//${requestUrlLower}`) ||
-                           windowUrl.includes(`https://${requestUrlLower}`) ||
-                           windowUrl.includes(`https://www.${requestUrlLower}`);
-                });
-                
-                if (!hasMatchingWindow) {
-                    logger.warn(`[CanvasEngine] Request unfulfilled: No window found for "${request.target}"`);
-                    return false;
-                }
-                return true;
-                
-            case 'close_all':
-                // For close all requests, check if all windows were closed
-                if (this.canvasState.windows.length > 0) {
-                    logger.warn(`[CanvasEngine] Request unfulfilled: ${this.canvasState.windows.length} windows still open after "close all"`);
-                    return false;
-                }
-                return true;
-                
-            case 'close_specific':
-                // For specific close requests, this is more complex to validate
-                // For now, assume fulfilled if we closed at least one window
-                if (this.canvasState.windows.length >= initialWindowCount) {
-                    logger.warn(`[CanvasEngine] Request unfulfilled: No windows were closed for "${request.target}"`);
-                    return false;
-                }
-                return true;
-                
-            case 'other':
-            default:
-                // For other requests (resize, move, etc.), assume fulfilled
-                return true;
-        }
-    }
-
-    /**
-     * Clean up all active abort signals to prevent memory leaks
-     */
-    private cleanupAbortSignals(): void {
-        this.activeControllers.forEach(controller => {
-            if (!controller.signal.aborted) {
-                controller.abort();
-            }
-        });
-        this.activeControllers.clear();
-    }
-
-    /**
-     * Create a new abort controller for the current operation
-     */
-    private createAbortController(): AbortController {
-        // Create a new controller for this specific operation
-        const controller = new AbortController();
-        this.activeControllers.add(controller);
-        
-        // Clean up when the operation completes or is aborted
-        controller.signal.addEventListener('abort', () => {
-            this.activeControllers.delete(controller);
-        });
-        
-        return controller;
-    }
-
-    /**
-     * Public API
-     */
-    async invoke(userInput: string, config: { recursionLimit?: number } = { recursionLimit: 25 }) {
+    async invoke(userInput: string): Promise<string> {
         logger.info(`[CanvasEngine] Processing user input: "${userInput}"`);
         
         const initialWindowCount = this.canvasState.windows.length;
         
-        // Create fresh abort controller for this specific operation
-        const abortController = this.createAbortController();
-        
         try {
-            const configWithSignal = {
-                ...config,
-                signal: abortController.signal
-            };
+            const config = { configurable: { thread_id: this.threadId } };
+            const input = { messages: [new HumanMessage(userInput)] };
             
-            // Include conversation history in the state so LLM maintains context
-            const initialState = {
-                messages: [...this.messages, new HumanMessage(userInput)]
-            };
+            // Use invoke instead of stream to avoid AbortSignal accumulation
+            await this.graph.invoke(input, config);
+            
+            // Generate action summary based on tool executions and canvas state changes
+            const actionSummary = this.generateActionSummary(userInput, initialWindowCount);
+            
+            logger.info(`[CanvasEngine] Completed processing. Windows: ${this.canvasState.windows.length}`);
+            return actionSummary;
+            
+        } catch (error: any) {
+            logger.error(`[CanvasEngine] Error processing request:`, error);
+            throw new Error(`Failed to process request: ${error.message}`);
+        }
+    }
 
-            const finalState = await this.graph.invoke(initialState, configWithSignal);
+    /**
+     * Generate a meaningful summary of actions performed for display in AthenaWidget
+     */
+    private generateActionSummary(userInput: string, initialWindowCount: number): string {
+        const currentWindowCount = this.canvasState.windows.length;
+        const windowChange = currentWindowCount - initialWindowCount;
+        
+        // Detect the type of request
+        const lowerInput = userInput.toLowerCase().trim();
+        
+        if (lowerInput.startsWith('open ')) {
+            const match = lowerInput.match(/^open\s+(.+)$/);
+            const targetSite = match ? match[1] : 'site';
             
-            // Store conversation history (only the new messages from this invocation)
-            const newMessages = finalState.messages.slice(this.messages.length);
-            this.messages.push(...newMessages);
-            
-            // Check if the user's request was actually fulfilled
-            if (!this.isRequestFulfilled(userInput, initialWindowCount)) {
-                logger.warn(`[CanvasEngine] Request not fulfilled, continuing conversation...`);
-                
-                // Create new abort controller for follow-up
-                const followUpController = this.createAbortController();
-                const followUpConfig = {
-                    recursionLimit: 10,
-                    signal: followUpController.signal
-                };
-                
-                // Generate appropriate follow-up message based on request type
-                const request = this.detectRequestType(userInput);
-                let followUpText = "Please complete the requested task.";
-                
-                switch (request.type) {
-                    case 'open':
-                        followUpText = `The requested window for "${request.target}" was not opened yet. Please complete the task by opening the requested window.`;
-                        break;
-                    case 'close_all':
-                        followUpText = `Not all windows were closed. Please continue closing all remaining windows to complete the "close all" request.`;
-                        break;
-                    case 'close_specific':
-                        followUpText = `The window for "${request.target}" was not closed yet. Please complete the task by closing the requested window.`;
-                        break;
+            if (windowChange > 0) {
+                // New window was opened
+                const newWindow = this.canvasState.windows[this.canvasState.windows.length - 1];
+                if (currentWindowCount === 1) {
+                    return `✅ Opened ${targetSite}`;
+                } else {
+                    return `✅ Arranged ${currentWindowCount} windows and opened ${targetSite}`;
                 }
-                
-                const followUpMessage = new HumanMessage(followUpText);
-                const continueState = {
-                    messages: [...this.messages, followUpMessage]
-                };
-                
-                const continuedState = await this.graph.invoke(continueState, followUpConfig);
-                
-                // Update messages with the continued conversation
-                const additionalMessages = continuedState.messages.slice(this.messages.length);
-                this.messages.push(...additionalMessages);
-                
-                logger.info(`[CanvasEngine] Continued processing to ensure completion`);
+            } else {
+                return `❌ Failed to open ${targetSite}`;
             }
-            
-            logger.info(`[CanvasEngine] Completed processing. Windows: ${this.canvasState.windows.length}, Messages: ${this.messages.length}`);
-            
-            return finalState;
-        } finally {
-            // Clean up this specific operation's abort controller
-            if (!abortController.signal.aborted) {
-                abortController.abort();
+        }
+        
+        if (lowerInput.includes('close all')) {
+            if (currentWindowCount === 0) {
+                return `✅ Closed all windows`;
+            } else {
+                return `⚠️ Closed some windows (${currentWindowCount} remaining)`;
             }
+        }
+        
+        if (lowerInput.startsWith('close ')) {
+            const closedCount = Math.abs(windowChange);
+            if (closedCount > 0) {
+                return `✅ Closed ${closedCount} window${closedCount > 1 ? 's' : ''}`;
+            } else {
+                return `⚠️ No windows were closed`;
+            }
+        }
+        
+        // For other operations (resize, move, etc.)
+        if (currentWindowCount > 0) {
+            return `✅ Canvas updated (${currentWindowCount} window${currentWindowCount > 1 ? 's' : ''})`;
+        } else {
+            return `✅ Task completed`;
         }
     }
 
@@ -764,26 +776,19 @@ export class CanvasEngine {
     }
 
     /**
-     * Get conversation history (read-only) 
-     */
-    getMessages(): ReadonlyArray<BaseMessage> {
-        return [...this.messages];
-    }
-
-    /**
-     * Clear conversation history
+     * Clear conversation history (reset the persistent thread)
      */
     clearHistory(): void {
-        this.messages = [];
-        this.cleanupAbortSignals(); // Clean up any pending operations
-        logger.info('[CanvasEngine] Conversation history cleared');
+        // With LangGraph persistence, we'd need to clear the checkpointer state
+        // For now, just create a new thread ID
+        (this as any).threadId = `canvas-session-${Date.now()}`;
+        logger.info('[CanvasEngine] Conversation history cleared - new thread started');
     }
 
     /**
      * Cleanup method to call when destroying the engine
      */
     destroy(): void {
-        this.cleanupAbortSignals();
         this.openWindows.forEach(window => {
             if (!window.isDestroyed()) {
                 window.close();
@@ -793,6 +798,4 @@ export class CanvasEngine {
         this.canvasState.windows = [];
         logger.info('[CanvasEngine] Engine destroyed and resources cleaned up');
     }
-
-
 }
