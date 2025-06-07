@@ -133,46 +133,62 @@ The AI agent is built using LangGraph with a sophisticated workflow:
 
 ```mermaid
 graph TD
-    A[User Input] --> B[Canvas Engine]
-    B --> C[LangGraph Agent]
-    C --> D{Tool Selection}
-    D --> E[Window Tools]
-    D --> F[Layout Tools]
-    E --> G[Browser Window Actions]
-    F --> H[Intelligent Positioning]
-    G --> I[State Update]
-    H --> I
-    I --> J[Validation Check]
-    J --> K{Request Complete?}
-    K -->|No| L[Continue Processing]
-    K -->|Yes| M[Response to User]
-    L --> C
+    A["User Input"] --> B["Canvas Engine invoke()"]
+    B --> C["LangGraph Graph invoke()"]
+    C --> D["Agent Node (callAgent)"]
+    D --> E["Google Gemini LLM"]
+    E --> F["AI Response with Tool Calls"]
+    F --> G{{"shouldContinue() Decision"}}
+    G -->|"Tool calls present"| H["Tools Node (ToolNode)"]
+    G -->|"No tools, force continue"| D
+    G -->|"Natural end"| M["Return to User"]
+    H --> I["Execute Tools: open_browser_window, close_browser_window, resize_and_move_window"]
+    I --> J["Update Canvas State + Window Management"]
+    J --> K["Tool Results"]
+    K --> D
+    D --> L["State Persistence (MemorySaver)"]
 ```
 
 **Agent Workflow:**
-1. **Input Processing**: Parse user intent and current canvas state
-2. **Tool Selection**: Choose appropriate tools based on request type
-3. **Execution**: Execute tools with proper error handling
-4. **Validation**: Verify request completion (e.g., all windows opened/closed)
-5. **Continuation**: Auto-continue if tasks are incomplete
+1. **Input Processing**: User input becomes HumanMessage in LangGraph thread
+2. **Agent Node**: Builds system prompt with current canvas state and calls Google Gemini LLM
+3. **Decision Logic**: `shouldContinue()` routes based on AI response:
+   - Tool calls present → execute tools
+   - No tool calls but recent tool execution → natural end
+   - No tool calls, force continuation (max 2 attempts) → retry agent
+4. **Tool Execution**: Execute one of three window management tools with state updates
+5. **Persistence**: MemorySaver maintains conversation history across sessions
 
 ### Tool System
 
 **Core Tools:**
-- `open_browser_window`: Create new browser windows with intelligent positioning
+- `open_browser_window`: Create new browser windows, platform components, or apps via URL schemes
 - `close_browser_window`: Close specific windows by ID  
 - `resize_and_move_window`: Adjust window geometry and position
-- `open_app_window` (future): Open built-in apps like Notes, Calendar, etc.
 
-**Tool Schemas** (`src/core/engine/tools/`):
+**URL Schemes for Different Window Types:**
+- `https://...` - Standard browser windows
+- `platform://ComponentName` - Platform UI components (InputPill, AthenaWidget)
+- `apps://AppName` - Built-in applications (notes, reminders)
+- `widgets://WidgetName` - Widget components (future)
+
+**Tool Schemas** (`src/core/engine/tools/canvas-tool-schemas.ts`):
 ```typescript
-// Example tool schema
 export const openWindowSchema = z.object({
-  url: z.string().describe("URL to open"),
+  url: z.string().describe("URL to open or component scheme"),
   x: z.number().optional().describe("X position"),
   y: z.number().optional().describe("Y position"),
   width: z.number().optional().describe("Window width"),
-  height: z.number().optional().describe("Window height")
+  height: z.number().optional().describe("Window height"),
+  title: z.string().optional().describe("Window title")
+});
+
+export const resizeAndMoveWindowSchema = z.object({
+  windowId: z.string().describe("REQUIRED: The ID of the window to resize/move"),
+  x: z.number().optional().describe("New X coordinate"),
+  y: z.number().optional().describe("New Y coordinate"),
+  width: z.number().optional().describe("New width"),
+  height: z.number().optional().describe("New height")
 });
 ```
 
@@ -370,34 +386,7 @@ Every window position is validated against:
 - **Size Constraints**: Enforce minimum width/height requirements
 - **Gap Compliance**: Validate proper spacing between adjacent windows
 
-## Request Processing & Validation
 
-### Request Type Detection
-
-The system intelligently categorizes user requests:
-
-```typescript
-type RequestType = 
-  | 'open'           // "open google"
-  | 'close_all'      // "close all"
-  | 'close_specific' // "close youtube"
-  | 'other';         // resize, move, etc.
-```
-
-### Action Sequence Validation
-
-**Problem Solved**: Previously, multi-step operations would sometimes complete partially (e.g., resize windows but forget to open the requested new window).
-
-**Solution**: Programmatic validation ensures complete task execution:
-
-```typescript
-// Example validation flow
-if (!this.isRequestFulfilled(userInput, initialWindowCount)) {
-  // Auto-continue with follow-up prompt
-  const followUpMessage = "Complete the task by opening the requested window.";
-  await this.graph.invoke(continueState);
-}
-```
 
 ## Memory Management
 
