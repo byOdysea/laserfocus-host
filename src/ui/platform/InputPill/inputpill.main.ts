@@ -1,6 +1,6 @@
 // src/apps/InputPill/input-pill.main.ts
 import * as logger from '@utils/logger';
-import { BrowserWindow, Display, ipcMain } from 'electron';
+import { app, BrowserWindow, Display, ipcMain } from 'electron';
 import * as path from 'path';
 
 const INPUT_PILL_WIDTH = 700;
@@ -60,7 +60,8 @@ export class InputPill {
                 logger.error('[InputPill.main] Failed to load InputPill dev URL:', err);
             });
         } else {
-            const prodPath = path.join(__dirname, '../renderer/ui/platform/InputPill/src/index.html');
+            const basePath = app.getAppPath();
+            const prodPath = path.join(basePath, 'dist/ui/platform/InputPill/src/index.html');
             logger.info(`[InputPill.main] Loading production file: ${prodPath}`);
             this.window.loadFile(prodPath).catch(err => {
                 logger.error('[InputPill.main] Failed to load InputPill production file:', err);

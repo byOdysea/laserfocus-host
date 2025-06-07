@@ -35,7 +35,7 @@ export class AthenaWidgetWindow {
             this.window.loadURL(`${this.viteDevServerUrl}src/ui/platform/AthenaWidget/src/index.html`);
         } else {
             const basePath = app.getAppPath();
-            const rendererPath = path.join(basePath, 'dist/apps/system/AthenaWidget/src/index.html');
+            const rendererPath = path.join(basePath, 'dist/ui/platform/AthenaWidget/src/index.html');
             logger.info(`[AthenaWidgetWindow] Attempting to load file from: ${rendererPath}`);
             this.window.loadFile(rendererPath);
         }

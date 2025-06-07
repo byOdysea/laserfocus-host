@@ -41,8 +41,7 @@ export class NotesWindow {
         } else {
             // Production: Load from built files
             const basePath = app.getAppPath();
-            const prodPath = 'apps/notes';
-            const rendererPath = path.join(basePath, `dist/ui/${prodPath}/src/index.html`);
+            const rendererPath = path.join(basePath, 'dist/ui/apps/notes/src/index.html');
             logger.info(`[NotesWindow] Loading from built file: ${rendererPath}`);
             this.window.loadFile(rendererPath);
         }

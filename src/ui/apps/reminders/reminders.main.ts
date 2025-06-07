@@ -1,6 +1,6 @@
+import * as logger from '@utils/logger';
 import { BrowserWindow, Display, app } from 'electron';
 import * as path from 'path';
-import * as logger from '@utils/logger';
 
 export class RemindersWindow {
     public window: BrowserWindow;
@@ -41,8 +41,7 @@ export class RemindersWindow {
         } else {
             // Production: Load from built files
             const basePath = app.getAppPath();
-            const prodPath = 'apps/reminders';
-            const rendererPath = path.join(basePath, `dist/ui/${prodPath}/src/index.html`);
+            const rendererPath = path.join(basePath, 'dist/ui/apps/reminders/src/index.html');
             logger.info(`[RemindersWindow] Loading from built file: ${rendererPath}`);
             this.window.loadFile(rendererPath);
         }
