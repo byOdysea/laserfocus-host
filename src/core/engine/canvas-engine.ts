@@ -70,13 +70,13 @@ export class CanvasEngine {
     };
 
     constructor(
-        apiKey: string | undefined,
-        modelName: string,
+        apiKey: string | undefined, 
+        modelName: string, 
         externalTools: StructuredTool[] = [],
         inputPillWindow?: BrowserWindow,
         athenaWidgetWindow?: BrowserWindow
     ) {
-        this.workArea = screen.getPrimaryDisplay().workArea;
+        this.workArea = screen.getPrimaryDisplay().workArea; 
         this.apiKey = apiKey || process.env.GOOGLE_API_KEY || "";
         
         if (!this.apiKey) {
@@ -388,7 +388,7 @@ export class CanvasEngine {
         
         // Normalize URL: add https:// if no protocol is specified
         url = this.normalizeUrl(url);
-        
+
         const newWindow = new BrowserWindow({
             x, y, width, height,
             webPreferences: { 
@@ -404,7 +404,7 @@ export class CanvasEngine {
         this.openWindows.set(windowId, newWindow);
 
         try {
-            await newWindow.loadURL(url);
+        await newWindow.loadURL(url);
         } catch (error: any) {
             logger.error(`[CanvasEngine] Failed to load URL ${url}:`, error);
             // Close the window if URL loading fails
@@ -422,7 +422,7 @@ export class CanvasEngine {
             this.openWindows.delete(windowId);
             this.canvasState.windows = this.canvasState.windows.filter(w => w.id !== windowId);
         });
-
+        
         newWindow.on('resize', () => {
             const newBounds = newWindow.getBounds();
             const windowState = this.canvasState.windows.find(w => w.id === windowId);
@@ -432,7 +432,7 @@ export class CanvasEngine {
         });
 
         newWindow.on('move', () => {
-            const newBounds = newWindow.getBounds();  
+            const newBounds = newWindow.getBounds();
             const windowState = this.canvasState.windows.find(w => w.id === windowId);
             if (windowState) {
                 windowState.x = newBounds.x;
@@ -495,8 +495,8 @@ export class CanvasEngine {
             this.openWindows.delete(id);
             this.canvasState.windows = this.canvasState.windows.filter(w => w.id !== id);
             logger.info(`[CanvasEngine] Window ${id} closed successfully`);
-            return { id, status: 'closed' };
-        } catch (error: any) {
+                return { id, status: 'closed' };
+            } catch (error: any) {
             logger.error(`[CanvasEngine] Error closing window ${id}:`, error);
             return { id, status: 'error' };
         }
@@ -518,9 +518,9 @@ export class CanvasEngine {
         try {
             const currentBounds = windowInstance.getBounds();
             const newBounds = { ...currentBounds };
-            
+
             if (x !== undefined) newBounds.x = x;
-            if (y !== undefined) newBounds.y = y; 
+            if (y !== undefined) newBounds.y = y;
             if (width !== undefined) newBounds.width = Math.max(100, width);
             if (height !== undefined) newBounds.height = Math.max(100, height);
 
@@ -548,9 +548,9 @@ export class CanvasEngine {
             }
 
             logger.info(`[CanvasEngine] Window ${windowId} resized/moved successfully`);
-            return {
-                id: windowId,
-                status: 'updated',
+            return { 
+                id: windowId, 
+                status: 'updated', 
                 ...finalBounds
             };
         } catch (error: any) {
@@ -795,4 +795,4 @@ export class CanvasEngine {
     }
 
 
-} 
+}

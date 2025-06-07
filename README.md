@@ -2,175 +2,633 @@
 
 ## Overview
 
-LaserFocus is an Electron-based desktop application that leverages an AI agent to manage browser windows within the application. Users can interact with the agent using natural language to request actions like opening specific URLs in new windows or closing existing windows. The application is designed to maintain a persistent state of open windows and conversation history across agent invocations, ensuring a seamless user experience.
+LaserFocus is an Electron-based desktop application that leverages an AI agent to intelligently manage browser windows. Users interact with the agent using natural language to request actions like opening specific URLs, arranging windows in sophisticated layouts, and closing windows. The application maintains persistent state and conversation history, ensuring a seamless and intelligent user experience.
+
+## Key Features
+
+### 🧠 **Intelligent Window Management**
+- **Natural Language Interface**: "open google", "arrange side by side", "close all"
+- **Smart Layout Engine**: Automatic top/bottom splits, grid layouts, and optimal space utilization
+- **URL Normalization**: Automatically handles partial URLs (e.g., "google" → "https://google.com")
+- **Context Awareness**: Remembers conversation history and current window states
+
+### 🚀 **Advanced Canvas Engine**
+- **Memory Leak Prevention**: Sophisticated AbortController lifecycle management
+- **Action Sequence Validation**: Ensures multi-step operations complete fully
+- **Concurrent Operation Support**: Handle multiple requests without interference
+- **Intelligent Layout Strategies**: Adaptive window arrangements based on window count
+
+### 🎯 **Modern Architecture**
+- **LangGraph Integration**: Structured AI agent workflows with proper tool calling
+- **TypeScript-First**: Full type safety throughout the codebase
+- **Modular IPC System**: Clean separation between UI components and core engine
+- **Hot Reload Development**: Fast iteration with Vite integration
+
+## Quick Start
+
+### Prerequisites
+- **Node.js** (LTS version 18.x.x or later)
+- **Yarn** (Classic or Berry)
+- **Google AI API Key** (for Gemini integration)
+
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd laserfocus
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   yarn install
+   ```
+
+3. **Environment setup:**
+   ```bash
+   # Create .env file in project root
+   echo "GOOGLE_API_KEY=your_api_key_here" > .env
+   ```
+
+4. **Run the application:**
+   ```bash
+   yarn dev
+   ```
+
+### Basic Usage Examples
+
+```bash
+# Open websites
+"open google"
+"open youtube and x.com"
+
+# Open built-in apps
+"open notes app"
+"open calendar and arrange it side by side with notes"
+
+# Intelligent layouts
+"open reddit" # Auto-arranges in top/bottom split with existing windows
+
+# Window management  
+"close all"
+"resize the google window"
+"close the notes app"
+```
 
 ## Core Architecture
 
-The application consists of several key components working together:
+### Canvas Engine (`src/core/engine/canvas-engine.ts`)
 
-1.  **Electron Main Process (`src/main.ts`):**
-    *   Initializes the application, UI components (from `src/apps/`), and core services (from `src/core/`).
-    *   Serves as the main entry point and orchestrates application lifecycle.
+The Canvas Engine is the central orchestrator that manages the entire application lifecycle:
 
-2.  **`CanvasEngine` (`src/core/engine/canvas-engine.ts`):**
-    *   The central orchestrator and "brain" of the application.
-    *   Manages the lifecycle of browser windows (creating, tracking, closing).
-    *   Persists the state of open windows (`_currentCanvasState`) and the conversation history (`_currentMessages`) across user interactions.
-    *   Hosts and invokes the LangGraph-based AI agent.
-    *   Provides tools (e.g., `open_browser_window`, `close_browser_window`) for the agent to interact with the application's windowing system.
+**Key Responsibilities:**
+- **Window Lifecycle Management**: Creating, tracking, resizing, and closing browser windows
+- **AI Agent Integration**: Hosts and invokes the LangGraph-based AI agent
+- **State Persistence**: Maintains conversation history and window states across sessions
+- **Tool Execution**: Provides tools for the agent to interact with the windowing system
 
-3.  **LangGraph Agent (within `CanvasEngine`):**
-    *   A stateful graph built using LangGraph that defines the agent's decision-making process.
-    *   Utilizes a Large Language Model (LLM, e.g., Google's Gemini) to understand user requests and decide which tools to use.
-    *   The graph manages the flow: receiving user input, calling the LLM, executing tools, updating canvas state, and returning a response.
+**Advanced Features:**
+- **Memory Management**: AbortController lifecycle prevents memory leaks
+- **Request Validation**: Ensures all multi-step operations complete successfully
+- **Layout Intelligence**: Automatic window arrangement strategies
+- **Error Recovery**: Graceful handling of malformed requests and edge cases
 
-4.  **User Interface Applications (`src/apps/`):**
-    *   Each UI-facing component or 'app' (e.g., `InputPill`, `AthenaWidget`) is located in its own subdirectory within `src/apps/`.
-    *   These directories co-locate their renderer assets (HTML, CSS, client-side JS/TS) and their main process controllers (e.g., `src/apps/InputPill/input-pill.main.ts`).
-    *   **`InputPill`:** A UI element allowing the user to type their requests for the agent.
-    *   **`AthenaWidget`:** A UI element that can display conversation history or agent responses.
-    *   **Canvas Windows:** Electron `BrowserWindow` instances that are opened and managed by the `CanvasEngine` based on agent actions. These display web content.
+```typescript
+// Example Canvas Engine usage
+const engine = new CanvasEngine(apiKey, modelName);
+const result = await engine.invoke("open google and youtube side by side");
+```
 
-5.  **Core Bridge (`src/core/bridge/`):**
-    *   Manages Inter-Process Communication (IPC). This includes standard Electron IPC between renderer processes (`src/apps/`) and the main process, as well as an internal event bus pattern *within* the main process.
-    *   **Main Process Internal Event Bus:** For communication between different main process modules (e.g., `main-handlers.ts` and app-specific IPC handlers like `athena-widget.ipc.ts`), the system uses `ipcMain.emit('event-name', payload)` and `ipcMain.on('event-name', listenerCallback)`.
-        *   **Important Listener Pattern:** When using `ipcMain.on` for these internal events, the `listenerCallback`'s first argument (typically typed `event: IpcMainEvent` to satisfy TypeScript) will actually *be* the `payload` sent by `ipcMain.emit`. To correctly access the payload, a type assertion like `const actualPayload = event as any as YourPayloadType;` is used within the listener.
-    *   **Modular IPC Handling:** Each application in `src/apps/` can define its own IPC handlers by implementing the `AppIpcModule` interface. These modules are registered by the `BridgeService` (`src/core/bridge/bridge.service.ts`) during application startup, promoting organized and decoupled communication logic.
-    *   User input from `InputPill`, for instance, is relayed to `CanvasEngine` via the `'run-agent'` IPC event, handled in `src/core/bridge/main-handlers.ts`, which then uses the internal event bus to notify other relevant modules like `AthenaWidget`.
+### LangGraph Agent Integration
 
-## Workflow Diagram
-
-The following diagram illustrates the typical workflow when a user makes a request:
+The AI agent is built using LangGraph with a sophisticated workflow:
 
 ```mermaid
 graph TD
-    A[User Enters Query in InputPill] --> B{IPC: 'run-agent'};
-    B --> C[CanvasEngine.invoke(query)];
-    C --> D{Graph Execution};
-    D -- 1. Prepare Initial State --> E[AgentState (current canvas, new input)];
-    D -- 2. Call Agent Node --> F{_callAgentNode};
-    F -- Uses persisted history & canvas --> G[LLM (e.g., Gemini)];
-    G -- Decides tool use --> F;
-    F -- Returns AIMessage w/ tool_calls --> D;
-    D -- 3. Conditional Routing --> H{_shouldContinueNode};
-    H -- If tool_calls exist --> I[ToolNode];
-    I -- Executes open/close_browser_window --> J[coreOpenWindow / coreCloseWindow];
-    J -- Modifies Electron BrowserWindow --> K[Actual Window Action (Open/Close)];
-    J -- Updates persisted _currentCanvasState & _currentOpenWindows --> C;
-    I -- Returns ToolMessage --> D;
-    D -- 4. Update Graph Canvas State --> L{_updateCanvasStateFromToolsNode};
-    L -- Updates graph's canvas.windows --> D;
-    D -- 5. Loop back to Agent or End --> H;
-    H -- If no tool_calls (or end) --> M[Final AgentState];
-    M --> C;
-    C -- Returns final state --> N[IPC: 'agent-response'];
-    N --> O[UI Updates (e.g., AthenaWidget)];
-
-    subgraph CanvasEngine Instance
-        C
-        J
-        F
-        L
-    end
-
-    subgraph LangGraph
-        D
-        E
-        H
-        I
-        M
-    end
+    A[User Input] --> B[Canvas Engine]
+    B --> C[LangGraph Agent]
+    C --> D{Tool Selection}
+    D --> E[Window Tools]
+    D --> F[Layout Tools]
+    E --> G[Browser Window Actions]
+    F --> H[Intelligent Positioning]
+    G --> I[State Update]
+    H --> I
+    I --> J[Validation Check]
+    J --> K{Request Complete?}
+    K -->|No| L[Continue Processing]
+    K -->|Yes| M[Response to User]
+    L --> C
 ```
 
-## Key Components in Detail
+**Agent Workflow:**
+1. **Input Processing**: Parse user intent and current canvas state
+2. **Tool Selection**: Choose appropriate tools based on request type
+3. **Execution**: Execute tools with proper error handling
+4. **Validation**: Verify request completion (e.g., all windows opened/closed)
+5. **Continuation**: Auto-continue if tasks are incomplete
 
-### `CanvasEngine`
+### Tool System
 
-*   **Responsibilities:**
-    *   Manages the lifecycle of `BrowserWindow` instances used as "canvases."
-    *   Persists conversation history and the abstract state of all open windows (ID, URL, title, geometry). This state is crucial for the agent to have context.
-    *   Initializes and runs a LangGraph agent, providing it with tools to interact with the application.
-    *   Handles events like manual window closures to keep its persisted state synchronized.
-*   **State Management:**
-    *   `_currentMessages`: An array of `BaseMessage` objects, storing the entire conversation history.
-    *   `_currentCanvasState`: An object containing `{ windows: OpenWindowInfo[] }`, representing all currently known open windows. This is the primary source of truth for the agent about window states.
-    *   `currentOpenWindows`: A `Map<string, BrowserWindow>` for quick access to live `BrowserWindow` instances by their ID.
-*   **Agent Interaction:**
-    *   The `invoke` method is the main entry point. It takes user input, sets up the initial state for the LangGraph agent (using persisted canvas state and the new input), runs the graph, and then updates the persisted state from the graph's final output.
-    *   `_callAgentNode`: Prepares the system prompt (including the list of current windows) and the full message history before calling the LLM.
-    *   `_updateCanvasStateFromToolsNode`: This custom node runs after the `ToolNode`. It's necessary because the standard `ToolNode` (from `@langchain/langgraph/prebuilt`) executes tools but doesn't inherently know how to update our specific `canvas.windows` structure within the `AgentState`. This node inspects tool outputs (e.g., from `open_browser_window`) and correctly updates the graph's `canvas.windows` state, ensuring accurate state propagation within the graph and back to the `CanvasEngine`'s persisted state.
+**Core Tools:**
+- `open_browser_window`: Create new browser windows with intelligent positioning
+- `close_browser_window`: Close specific windows by ID  
+- `resize_and_move_window`: Adjust window geometry and position
+- `open_app_window` (future): Open built-in apps like Notes, Calendar, etc.
 
-### LangGraph Agent
+**Tool Schemas** (`src/core/engine/tools/`):
+```typescript
+// Example tool schema
+export const openWindowSchema = z.object({
+  url: z.string().describe("URL to open"),
+  x: z.number().optional().describe("X position"),
+  y: z.number().optional().describe("Y position"),
+  width: z.number().optional().describe("Window width"),
+  height: z.number().optional().describe("Window height")
+});
+```
 
-*   **Structure:** A `StateGraph<AgentState>` where `AgentState` includes `messages: BaseMessage[]` and `canvas: { windows: OpenWindowInfo[] }`.
-*   **Nodes:**
-    *   `agent` (`_callAgentNode`): Invokes the LLM.
-    *   `tools` (`ToolNode`): Executes tools chosen by the LLM.
-    *   `_update_canvas_state` (`_updateCanvasStateFromToolsNode`): Updates the graph's canvas state based on tool outputs.
-*   **Flow:** The graph typically flows from `agent` -> `tools` -> `_update_canvas_state` -> `agent`, continuing until the agent decides no more tools are needed.
+### UI Components
 
-## Component-Led Data Fetching Strategy
+**InputPill** (`src/apps/InputPill/`):
+- Clean, minimal input interface for user queries
+- Real-time feedback during agent processing
+- Keyboard shortcuts and accessibility features
 
-A recent architectural shift moves towards a component-led data fetching model for UI elements displayed on the canvas (e.g., hypothetical ToDo, Calendar, or Email components). This strategy aims to make UI components more self-contained and reduce the agent's direct data-handling responsibilities.
+**AthenaWidget** (`src/apps/AthenaWidget/`):
+- Displays conversation history and agent responses
+- Real-time updates during multi-step operations
+- Status indicators for ongoing processes
 
-*   **Agent's Role:** Instead of fetching data for components, the agent's primary role is to understand the user's intent and determine *what* components are needed and *what data requirements or configuration* those components have. It then uses canvas tools like `add_component_to_canvas` or `update_canvas`.
-*   **`props` Argument:** The `props` argument of these canvas tools is crucial. The agent passes data-fetching parameters, configuration, or initial state requirements through `props`. For example, for a ToDo component, `props` might include `{ "filter": "today", "sortBy": "priority" }`.
-*   **Component Responsibility:** The UI components themselves (e.g., React components) are responsible for receiving these `props`, making their own API calls (simulated or real) to fetch the actual data, and managing their internal state (e.g., using `useEffect` in React).
-*   **Pydantic Validation:** The `props` argument in the Python tools (`engine/src/tools/canvas.py`) is validated using Pydantic models to ensure type safety and that `props` are correctly parsed (e.g., from a JSON string to a dictionary if necessary).
-*   **Exception - `Weather` Component:** For some components like `Weather`, the agent may still directly fetch data using a specific tool (e.g., `get_weather`) and then pass the fetched data directly into the component's `props` (e.g., `props: { "weatherData": ... }`).
+### Modern IPC Bridge (`src/core/bridge/`)
 
-This approach promotes better separation of concerns, allowing UI components to be more autonomous and the agent to focus on orchestration and intent understanding.
+**Modular Architecture:**
+- Each UI component defines its own IPC handlers via `AppIpcModule` interface
+- Type-safe communication between processes using TypeScript
+- Centralized coordination through `initializeBridge()` function
 
-## Known Issues
+**Key Components:**
+- `bridge.service.ts`: Central IPC coordination and modern `run-agent` handler
+- `types.ts`: Type definitions for cross-process communication and `AppIpcModule` interface
+- App-specific IPC modules: `InputPillIpcHandlers`, `AthenaWidgetIpcHandlers`
 
-*   **Agent State Bug: Malformed/Crashed Windows Not Tracked for Closure**
-    *   **Description:** The AI agent and potentially the `CanvasEngine`'s window state tracking do not correctly recognize Electron `BrowserWindow` instances that were created but failed to load their URL (e.g., due to `ERR_INVALID_URL`) as 'open' for the purpose of subsequent `close_browser_window` tool calls. 
-    *   **Symptom:** If a window fails to load content (e.g., user provides "x.com" instead of "https://x.com"), the `open_browser_window` tool correctly reports the error. However, if the user then asks to close that window, the agent might incorrectly report that no windows are open, even if an empty or error-state `BrowserWindow` instance still exists on screen.
-    *   **Impact:** Users might be unable to close these 'ghost' windows using agent commands and may need to manually close them if they are visible.
-    *   **Status:** Identified. A potential fix would involve ensuring that `CanvasEngine` still tracks the `BrowserWindow` instance even if its content fails to load, and that the `close_browser_window` tool can target such windows.
+**Handler Registration Flow:**
+```typescript
+// Each app defines its IPC module
+const appModules: AppIpcModule[] = [
+  InputPillIpcHandlers,   // Handles InputPill-specific events
+  AthenaWidgetIpcHandlers // Handles AthenaWidget-specific events
+];
 
-## Future Architectural Considerations
+// Bridge service registers all handlers
+initializeBridge(canvasEngine, appModules, appInstances);
+```
 
-As LaserFocus evolves, the following architectural patterns and preferences are noted for future development:
+## Layout Intelligence
 
-*   **App-Specific Data Persistence:** For features requiring local data storage (e.g., a Notes app using SQLite), the data management logic (database connection, CRUD operations, schemas) will be encapsulated within the respective app's directory, typically under `src/apps/AppName/data/`. The app's main process controller (`src/apps/AppName/appname.main.ts`) will manage this data logic and expose it to its renderer via IPC through the `src/core/bridge/`.
+### Automatic Layout Strategies
 
-*   **Dedicated Backend Services:** If the application requires more complex backend processes that warrant a separate server (beyond what the Electron main process can suitably handle, or for services shared across many potential apps/clients), the preference is to use [Bun](https://bun.sh/) as the JavaScript runtime and framework for building these services.
-*   **Refine Agent Tool Output:** Continuously refine prompt engineering to ensure that when the agent decides to use tools, its output consists *strictly* of the structured tool call JSON (e.g., `{"tool_calls": [...]}`), without any conversational prefixes or suffixes. This aims to maximize responsiveness and reduce processing overhead when parsing agent actions.
+The Canvas Engine includes sophisticated layout algorithms:
 
-## Setup & Running
+**Single Window**: Full screen utilization (1070×776)
 
-*   **Prerequisites:**
-    *   Node.js (LTS version, e.g., 20.x.x or later recommended)
-    *   Yarn (Classic or Berry)
-*   **Installation:**
-    1.  Clone the repository:
-        ```bash
-        git clone <repository-url> # Replace <repository-url> with the actual URL
-        cd laserfocus
-        ```
-    2.  Install dependencies:
-        ```bash
-        yarn install
-        ```
-*   **Environment Setup:**
-    1.  Create a `.env` file in the project root (copy from `.env.example` if it exists).
-    2.  Add necessary environment variables, primarily:
-        *   `GOOGLE_API_KEY`: Your API key for Google Generative AI services.
-        *   `VITE_DEV_SERVER_URL=http://localhost:5173` (This is the default for Vite and usually doesn't need changing unless you've configured Vite differently).
-*   **Running the App (Development Mode):**
-    ```bash
-    yarn dev
-    ```
-    This command typically runs Vite for the renderer HMR and Electron concurrently.
-*   **Building for Production (Example):**
-    (Add specific build commands here once defined, e.g., `yarn build` or `yarn package`)
+**Two Windows**: Side-by-side layout (530×776 each)
+
+**Three+ Windows**: Intelligent top/bottom splits
+- Top window: Full width, half height (1070×388)
+- Bottom windows: Side-by-side in remaining space (530×388 each)
+
+**Grid Layouts**: For 4+ windows, automatic grid arrangements
+
+### Layout Configuration
+
+```typescript
+interface LayoutConfig {
+  screenEdgePadding: number;    // 10px default
+  windowGap: number;           // 10px spacing between windows
+  menuBarHeight: number;       // 40px macOS menu bar
+  minWindowWidth: number;      // 300px minimum
+}
+```
+
+## Request Processing & Validation
+
+### Request Type Detection
+
+The system intelligently categorizes user requests:
+
+```typescript
+type RequestType = 
+  | 'open'           // "open google"
+  | 'close_all'      // "close all"
+  | 'close_specific' // "close youtube"
+  | 'other';         // resize, move, etc.
+```
+
+### Action Sequence Validation
+
+**Problem Solved**: Previously, multi-step operations would sometimes complete partially (e.g., resize windows but forget to open the requested new window).
+
+**Solution**: Programmatic validation ensures complete task execution:
+
+```typescript
+// Example validation flow
+if (!this.isRequestFulfilled(userInput, initialWindowCount)) {
+  // Auto-continue with follow-up prompt
+  const followUpMessage = "Complete the task by opening the requested window.";
+  await this.graph.invoke(continueState);
+}
+```
+
+## Memory Management
+
+### AbortController Lifecycle
+
+**Challenge**: LangGraph operations create AbortSignal listeners that could accumulate and cause memory leaks.
+
+**Solution**: Sophisticated controller management:
+
+```typescript
+// Per-operation controllers
+private createAbortController(): AbortController {
+  const controller = new AbortController();
+  this.activeControllers.add(controller);
+  
+  // Auto-cleanup on completion
+  controller.signal.addEventListener('abort', () => {
+    this.activeControllers.delete(controller);
+  });
+  
+  return controller;
+}
+```
+
+**Benefits**:
+- No memory leaks in long-running sessions
+- Concurrent operations don't interfere
+- Graceful cleanup on engine destruction
+
+## Error Handling & Recovery
+
+### URL Normalization
+
+```typescript
+private normalizeUrl(url: string): string {
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  return `https://${url}`;
+}
+```
+
+### Malformed Request Recovery
+
+- **Schema Validation**: Zod schemas ensure tool arguments are well-formed
+- **Fallback Prompts**: When external prompt files fail to load
+- **Graceful Degradation**: Continue operation even with partial failures
+
+## App Architecture & Development
+
+### Standalone App Development (`src/apps/`)
+
+LaserFocus provides a powerful architecture for developing standalone applications that can be managed by the Canvas Engine. Each app in `src/apps/` is a complete, self-contained application with its own UI, logic, and build configuration.
+
+#### App Structure Pattern
+
+Each app follows a consistent structure that enables easy development and integration:
+
+```
+src/apps/YourApp/
+├── index.html          # Entry point HTML
+├── renderer.ts         # Client-side logic (can be React, Vue, vanilla JS/TS)
+├── style.css           # App-specific styles
+├── preload.ts          # Secure bridge between main and renderer
+├── your-app.main.ts    # Main process window management
+└── your-app.ipc.ts     # IPC handlers (implements AppIpcModule)
+```
+
+#### Real Example: Notes App Implementation
+
+Here's how you would implement a Notes app that the Canvas Engine can open and manage:
+
+**1. Create App Structure:**
+```bash
+mkdir src/apps/Notes
+```
+
+**2. Main Process Controller (`notes.main.ts`):**
+```typescript
+export class NotesWindow {
+  public window: BrowserWindow;
+  private viteDevServerUrl: string | undefined;
+  private preloadPath: string;
+
+  constructor(primaryDisplay: Display, viteDevServerUrl: string | undefined, preloadPath: string) {
+    this.viteDevServerUrl = viteDevServerUrl;
+    this.preloadPath = preloadPath;
+    this.window = new BrowserWindow({
+      width: 800,
+      height: 600,
+      title: 'Notes App',
+      webPreferences: {
+        preload: this.preloadPath,
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+  }
+
+  init(): void {
+    if (this.viteDevServerUrl) {
+      // Development: Load from Vite dev server
+      this.window.loadURL(`${this.viteDevServerUrl}/src/apps/Notes/index.html`);
+    } else {
+      // Production: Load from built files
+      const rendererPath = path.join(app.getAppPath(), 'dist/apps/Notes/index.html');
+      this.window.loadFile(rendererPath);
+    }
+  }
+}
+```
+
+**3. React App Entry (`index.html`):**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Notes App</title>
+    <link rel="stylesheet" href="/src/apps/Notes/style.css">
+</head>
+<body>
+    <div id="notes-root"></div>
+    <script type="module" src="/src/apps/Notes/renderer.tsx"></script>
+</body>
+</html>
+```
+
+**4. React Renderer (`renderer.tsx`):**
+```typescript
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { NotesApp } from './components/NotesApp';
+
+const root = ReactDOM.createRoot(
+  document.getElementById('notes-root') as HTMLElement
+);
+
+root.render(<NotesApp />);
+```
+
+**5. IPC Module (`notes.ipc.ts`):**
+```typescript
+export const NotesIpcHandlers: AppIpcModule = {
+  moduleId: 'notes',
+  registerMainProcessHandlers: (ipcMain, canvasEngine, appInstance) => {
+    ipcMain.on('notes:save-note', (event, noteData) => {
+      // Handle note saving logic
+    });
+    
+    ipcMain.on('notes:load-notes', (event) => {
+      // Handle note loading logic
+    });
+  }
+};
+```
+
+#### Build System Integration
+
+The Vite configuration automatically handles app building. Add your app to `vite.config.ts`:
+
+```typescript
+export default defineConfig({
+  plugins: [
+    electron([
+      // ... existing entries ...
+      {
+        entry: 'src/apps/Notes/preload.ts',
+        vite: {
+          build: {
+            outDir: 'dist/apps/Notes',
+          },
+        },
+      },
+    ]),
+  ],
+  build: {
+    rollupOptions: {
+      input: {
+        // ... existing entries ...
+        notes: path.resolve(__dirname, 'src/apps/Notes/index.html'),
+      },
+    },
+  },
+});
+```
+
+#### Canvas Engine Integration
+
+Once your app is built, the Canvas Engine can open it as a managed window:
+
+```typescript
+// User says: "open notes app"
+// Canvas Engine can open the Notes app with:
+
+const notesWindow = new BrowserWindow({
+  // ... configuration ...
+});
+
+// Development
+notesWindow.loadURL(`${VITE_DEV_SERVER_URL}/src/apps/Notes/index.html`);
+
+// Production  
+notesWindow.loadFile('dist/apps/Notes/index.html');
+```
+
+#### Advanced App Capabilities
+
+**State Management:**
+- Apps can use any state management solution (Redux, Zustand, Context API)
+- Persist data through IPC to main process or local storage
+- Share state between Canvas Engine and app through IPC events
+
+**Full React Ecosystem:**
+- Use React Router for multi-page apps
+- Integrate UI libraries (Material-UI, Chakra UI, etc.)
+- Hot reload during development via Vite
+- TypeScript support out of the box
+
+**Data Integration:**
+- Apps can make API calls to external services
+- SQLite integration for local data storage
+- Real-time updates through WebSocket connections
+- File system access through main process IPC
+
+**UI Frameworks Supported:**
+- **React**: Full JSX/TSX support with hot reload
+- **Vue**: Vue 3 with Composition API
+- **Svelte**: Modern reactive framework
+- **Vanilla**: Pure TypeScript/JavaScript with DOM manipulation
+
+#### App Registration in Main Process
+
+Register your app in `src/main.ts`:
+
+```typescript
+// Import your app
+import { NotesWindow } from './apps/Notes/notes.main';
+import NotesIpcHandlers from './apps/Notes/notes.ipc';
+
+// Initialize in initializeApp()
+const notesApp = new NotesWindow(primaryDisplay, VITE_DEV_SERVER_URL, 
+  path.join(__dirname, '../apps/Notes/preload.js'));
+notesApp.init();
+
+// Add to app instances and modules
+appInstances.set('notes', notesApp);
+appModules.push(NotesIpcHandlers);
+```
+
+This architecture enables you to build sophisticated desktop applications that seamlessly integrate with LaserFocus's AI-powered window management system.
+
+#### Future Canvas Engine Integration
+
+The Canvas Engine will soon support dynamic app opening through natural language commands. Users will be able to say:
+
+- **"open notes app"** → Canvas Engine opens the Notes app window
+- **"open calendar and place it next to notes"** → Opens Calendar app with intelligent positioning  
+- **"close all apps but keep notes"** → Selective app management
+- **"resize the notes app to take up the left half"** → Dynamic app window manipulation
+
+This creates a unified ecosystem where web content and native apps coexist under intelligent AI management.
+
+## Development
+
+### Project Structure
+
+```
+src/
+├── apps/                    # UI Components
+│   ├── InputPill/          # User input interface
+│   └── AthenaWidget/       # Conversation display
+├── core/                   # Core engine and services
+│   ├── bridge/             # IPC communication
+│   ├── config/             # Application configuration
+│   └── engine/             # Canvas Engine implementation
+│       ├── canvas-engine.ts # Main engine
+│       ├── engine.service.ts # Engine management
+│       ├── prompts/        # AI prompt templates
+│       └── tools/          # Tool schemas
+├── utils/                  # Shared utilities
+└── main.ts                 # Electron main process
+```
+
+### Development Workflow
+
+```bash
+# Start development server
+yarn dev
+
+# Run tests (when available)
+yarn test
+
+# Build for production
+yarn build
+
+# Type checking
+yarn type-check
+```
+
+### Adding New Tools
+
+1. **Define Schema** (`src/core/engine/tools/`):
+```typescript
+export const newToolSchema = z.object({
+  param1: z.string(),
+  param2: z.number().optional()
+});
+```
+
+2. **Implement Tool** (in `CanvasEngine`):
+```typescript
+const newTool = tool(
+  async (args: z.infer<typeof newToolSchema>) => {
+    // Implementation
+    return result;
+  },
+  {
+    name: "new_tool",
+    description: "Tool description for AI",
+    schema: newToolSchema
+  }
+);
+```
+
+3. **Register Tool**:
+```typescript
+this.tools = [newTool, ...existingTools];
+```
 
 ## Environment Variables
 
-The application may require the following environment variables (e.g., in a `.env` file at the project root):
+Create a `.env` file in the project root:
 
-*   `GOOGLE_API_KEY`: Your API key for Google Generative AI services (Gemini).
-*   `VITE_DEV_SERVER_URL`: (If using Vite for the renderer) URL for the Vite development server, e.g., `http://localhost:5173`.
+```env
+# Required
+GOOGLE_API_KEY=your_google_ai_api_key
 
-This README provides a foundational understanding of the LaserFocus project.
+# Development (optional)
+VITE_DEV_SERVER_URL=http://localhost:5173
+NODE_ENV=development
+
+# Canvas Engine (optional)
+DEFAULT_MODEL_NAME=gemini-1.5-flash
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Memory Warnings**:
+- Fixed in current version with proper AbortController management
+- If you see warnings, ensure you're using the latest Canvas Engine
+
+**Windows Not Opening**:
+- Check GOOGLE_API_KEY is valid
+- Verify network connectivity
+- Check console for URL normalization issues
+
+**Layout Issues**:
+- Layout engine adapts to screen size automatically
+- Check screen resolution and available space
+- Verify window bounds are within screen limits
+
+**Tool Execution Failures**:
+- Schema validation prevents most issues
+- Check tool arguments in logs
+- Verify Electron permissions
+
+### Debug Mode
+
+Enable verbose logging:
+```bash
+DEBUG=canvas-engine yarn dev
+```
+
+## Contributing
+
+1. **Code Style**: Follow TypeScript best practices
+2. **Testing**: Add tests for new features
+3. **Documentation**: Update README for significant changes
+4. **Type Safety**: Maintain full TypeScript coverage
+
+## License
+
+[Add your license information here]
+
+## Acknowledgments
+
+- **LangGraph**: For AI agent workflow management
+- **Google AI**: For Gemini language model integration
+- **Electron**: For cross-platform desktop application framework
+- **Vite**: For fast development experience
