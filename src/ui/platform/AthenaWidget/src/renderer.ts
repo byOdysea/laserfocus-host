@@ -13,7 +13,14 @@ const cleanupConversationUpdateListener = window.electronAPI.ipcRendererOn('conv
 
     const contentElement = document.createElement('span');
     contentElement.classList.add('content');
-    contentElement.textContent = content;
+    
+    // Handle empty responses gracefully
+    if (content === '__EMPTY_RESPONSE__') {
+        contentElement.innerHTML = '<span class="completion-marker">✓ Task completed</span>';
+        lineElement.classList.add('completion');
+    } else {
+        contentElement.textContent = content;
+    }
 
     lineElement.appendChild(prefixElement);
     lineElement.appendChild(contentElement);

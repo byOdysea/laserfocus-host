@@ -1,11 +1,11 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { NotesApp } from './components/NotesApp';
+import { RemindersApp } from './components/RemindersApp';
 
-const container = document.getElementById('notes-root');
+const container = document.getElementById('reminders-root');
 if (!container) {
     throw new Error('Failed to find the root element');
 }
 
 const root = createRoot(container);
-root.render(<NotesApp />);
+root.render(<RemindersApp />);

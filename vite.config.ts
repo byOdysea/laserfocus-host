@@ -5,8 +5,8 @@ import renderer from 'vite-plugin-electron-renderer';
 import {
     createUIDiscoveryPlugin,
     discoverAppsFromFileSystem,
-    generateViteElectronEntries,
-    generateViteInputs
+  generateViteElectronEntries,
+  generateViteInputs
 } from './src/core/app-discovery/vite-app-discovery';
 
 // Discover UI components automatically

@@ -1,4 +1,4 @@
-/* notes App Styles */
+/* reminders App Styles */
 * {
     margin: 0;
     padding: 0;
@@ -13,14 +13,14 @@ body {
     overflow: hidden;
 }
 
-#notes-root {
+#reminders-root {
     height: 100vh;
     display: flex;
     flex-direction: column;
 }
 
 /* Header */
-.notes-header {
+.reminders-header {
     background-color: #ffffff;
     border-bottom: 1px solid #e9ecef;
     padding: 16px 20px;
@@ -30,14 +30,14 @@ body {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
-.notes-title {
+.reminders-title {
     font-size: 20px;
     font-weight: 600;
     color: #2c3e50;
 }
 
 /* Content */
-.notes-content {
+.reminders-content {
     flex: 1;
     padding: 20px;
     overflow-y: auto;

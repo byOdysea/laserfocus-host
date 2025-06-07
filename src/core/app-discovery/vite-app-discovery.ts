@@ -150,25 +150,25 @@ export function generateAppRegistry(apps: DiscoveredApp[], outputPath: string): 
                  if (mainFile) {
              const mainImportName = `${name}Main`;
              imports.push(`import * as ${mainImportName} from '@ui/${fullPath}/${mainFile.replace(/\.(ts|js)$/, '')}';`);
-             
+            
              mainClassEntries.push(`    if (${mainImportName}) {
          for (const [key, value] of Object.entries(${mainImportName})) {
              if (typeof value === 'function' && (key.includes('Window') || key.includes('${name}'))) {
                  registry.mainClasses.set('${name}', value);
-                 break;
-             }
-         }
-     }`);
-         }
-         
+                break;
+            }
+        }
+    }`);
+        }
+
          if (ipcFile) {
              const ipcImportName = `${name}Ipc`;
              imports.push(`import * as ${ipcImportName} from '@ui/${fullPath}/${ipcFile.replace(/\.(ts|js)$/, '')}';`);
-             
+            
              ipcModuleEntries.push(`    if (${ipcImportName}.default) {
          registry.ipcModules.set('${name}', ${ipcImportName}.default);
-     }`);
-         }
+    }`);
+        }
         
         appNames.push(`'${name}'`);
     });

@@ -1,5 +1,13 @@
+import type {
+    CanvasState,
+    CanvasWindowState,
+    LayoutConfig,
+    LLMConfig,
+    PlatformComponentConfig
+} from '@/lib/types/canvas';
 import { layoutStrategyPrompt } from '@core/engine/prompts/layout-strategy';
 import { systemBasePrompt } from '@core/engine/prompts/system-base';
+import { buildUIComponentsDescription } from '@core/engine/prompts/ui-components';
 import { closeWindowSchema, openWindowSchema, resizeAndMoveWindowSchema } from '@core/engine/tools/canvas-tool-schemas';
 import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { StructuredTool, tool } from "@langchain/core/tools";
@@ -9,44 +17,8 @@ import { ToolNode } from "@langchain/langgraph/prebuilt";
 import logger from '@utils/logger';
 import { BrowserWindow, Rectangle, screen } from 'electron';
 import { setMaxListeners } from 'events';
+import path from 'path';
 import { z } from 'zod';
-
-export interface CanvasWindowState {
-    id: string;
-    url: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    title: string;
-}
-
-export interface CanvasState {
-    windows: CanvasWindowState[];
-}
-
-export interface UIComponentBounds {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    name: string;
-}
-
-export interface LayoutConfig {
-    screenEdgePadding: number;
-    windowGap: number;
-    menuBarHeight: number;
-    minWindowWidth: number;
-}
-
-export interface LLMConfig {
-    provider: 'google' | 'openai' | 'anthropic';
-    apiKey: string;
-    modelName: string;
-    temperature?: number;
-    maxTokens?: number;
-}
 
 // TODO: Provider abstraction for future migration to OpenAI/Claude
 // Will re-enable when migrating from Gemini
@@ -54,6 +26,25 @@ export interface LLMConfig {
 /**
  * Canvas Engine for LaserFocus
  * Manages browser windows using LangGraph with proper persistence
+ * 
+ * ARCHITECTURAL EVOLUTION ROADMAP:
+ * 
+ * PHASE 1 (CURRENT): Consistent event handling across all window types
+ * - ✅ Add missing move/resize listeners for platform components
+ * - ✅ Unified platform component tracking helper
+ * - ✅ Consistent logging and state management
+ * 
+ * PHASE 2 (MEDIUM-TERM): Extensible foundation
+ * - 🔄 WindowTracker class for unified window lifecycle management
+ * - 🔄 LayoutContextProvider for centralized layout calculations
+ * - 🔄 Generic platform component registration (no hard-coded types)
+ * - 🔄 Plugin system for layout strategies
+ * 
+ * PHASE 3 (LONG-TERM): Full context awareness
+ * - 🔮 Event-driven architecture with real-time context updates
+ * - 🔮 Agent prompt updates triggered by UI changes
+ * - 🔮 Context-aware tool suggestions
+ * - 🔮 Dynamic layout optimization based on usage patterns
  * 
  * ⚠️  TECHNICAL DEBT WARNING ⚠️
  * 
@@ -91,9 +82,18 @@ export class CanvasEngine {
     private readonly threadId: string = "canvas-session"; // Persistent conversation thread
     
     // State management - LangGraph handles conversation history automatically
+    // PHASE 2 TODO: Replace these with WindowTracker and LayoutContextProvider
     private canvasState: CanvasState = { windows: [] };
     private openWindows: Map<string, BrowserWindow> = new Map();
-    private uiComponents: UIComponentBounds[] = [];
+    
+    // PHASE 3 TODO: Add EventEmitter inheritance for real-time context updates
+    // export class CanvasEngine extends EventEmitter {
+    
+    // Platform component management
+    private platformRegistry: Map<string, PlatformComponentConfig> = new Map();
+    private platformInstances: Map<string, any> = new Map();
+    private uiConfig: { primaryDisplay: any; viteDevServerUrl: string | undefined; preloadBasePath: string } | null = null;
+    private uiDiscoveryService: any = null; // Will be typed properly when imported
     
     // Layout configuration
     private readonly layoutConfig: LayoutConfig = {
@@ -116,7 +116,7 @@ export class CanvasEngine {
         this.workArea = screen.getPrimaryDisplay().workArea; 
         
         // Store config for future provider abstraction
-        const resolvedApiKey = apiKey || process.env.GOOGLE_API_KEY || "";
+        const resolvedApiKey = apiKey || process.env.GOOGLE_API_KEY || "AIzaSyCCQcQH3xse-L9E5grN3JKTDNqEd6pzjNo";
         if (!resolvedApiKey) {
             throw new Error("GOOGLE_API_KEY is required");
         }
@@ -142,24 +142,159 @@ export class CanvasEngine {
     }
 
     /**
-     * Set up UI component boundaries for layout calculations
+     * Register a platform component with the Canvas Engine
+     */
+    registerPlatformComponent(config: PlatformComponentConfig): void {
+        this.platformRegistry.set(config.name, config);
+        logger.info(`[CanvasEngine] Registered platform component: ${config.name}`);
+    }
+
+    /**
+     * Set UI configuration for platform component creation
+     */
+    setUIConfig(config: { primaryDisplay: any; viteDevServerUrl: string | undefined; preloadBasePath: string }): void {
+        this.uiConfig = config;
+        logger.info(`[CanvasEngine] UI configuration set`);
+    }
+
+    /**
+     * Set UI discovery service reference for accessing available components
+     */
+    setUIDiscoveryService(service: any): void {
+        this.uiDiscoveryService = service;
+    }
+
+    /**
+     * Get all available UI components for agent context
+     */
+    getAvailableUIComponents(): {
+        platform: string[];
+        apps: string[];
+        widgets: string[];
+    } {
+        if (this.uiDiscoveryService) {
+            return {
+                platform: this.uiDiscoveryService.getPlatformComponents(),
+                apps: this.uiDiscoveryService.getAvailableApplications(),
+                widgets: [] // TODO: Add widgets method to UIDiscoveryService
+            };
+        }
+        
+        return {
+            platform: Array.from(this.platformRegistry.keys()),
+            apps: [],
+            widgets: []
+        };
+    }
+
+    /**
+     * Get platform component instance by name
+     */
+    getPlatformInstance(componentName: string): any {
+        return this.platformInstances.get(componentName);
+    }
+
+    /**
+     * Set up platform component tracking for layout calculations
+     * 
+     * PHASE 1: Add missing event listeners for consistent state management
+     * PHASE 2: Replace with unified WindowTracker class for all window types
+     * PHASE 3: Implement LayoutContextProvider with real-time context updates
      */
     private setupUIComponents(inputPillWindow?: BrowserWindow, athenaWidgetWindow?: BrowserWindow): void {
+        // PHASE 2 TODO: Replace this method with WindowTracker.trackPlatformComponent()
+        // This will eliminate code duplication between platform components and browser windows
+        
         if (inputPillWindow && !inputPillWindow.isDestroyed()) {
-            const bounds = inputPillWindow.getBounds();
-            this.uiComponents.push({
-                ...bounds,
-                name: 'InputPill'
-            });
+            this.setupPlatformComponentTracking(
+                inputPillWindow, 
+                'InputPill', 
+                'platform://InputPill'
+            );
         }
 
         if (athenaWidgetWindow && !athenaWidgetWindow.isDestroyed()) {
-            const bounds = athenaWidgetWindow.getBounds();
-            this.uiComponents.push({
-                ...bounds,
-                name: 'AthenaWidget'  
-            });
+            this.setupPlatformComponentTracking(
+                athenaWidgetWindow, 
+                'AthenaWidget', 
+                'platform://AthenaWidget'
+            );
         }
+        
+        // PHASE 3 TODO: Emit 'layout-context-changed' event here
+        // This will trigger real-time agent context updates when platform components change
+        logger.info(`[CanvasEngine] Platform components initialized. Layout context ready.`);
+    }
+
+    /**
+     * Helper method to set up tracking for a platform component
+     * 
+     * PHASE 1: DRY principle - unified setup for all platform components
+     * PHASE 2: This becomes part of the WindowTracker class
+     * PHASE 3: Extended with context-aware event emission
+     */
+    private setupPlatformComponentTracking(
+        window: BrowserWindow, 
+        componentName: string, 
+        url: string
+    ): void {
+        const bounds = window.getBounds();
+        const windowId = `platform-${window.id}`;
+        
+        // Track window instance
+        this.openWindows.set(windowId, window);
+        
+        // Create window state
+        const windowState: CanvasWindowState = {
+            id: windowId,
+            url,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+            title: componentName,
+            type: 'platform',
+            componentName
+        };
+        
+        this.canvasState.windows.push(windowState);
+
+        // PHASE 1: Add missing event listeners (consistency with browser windows)
+        window.on('move', () => {
+            const newBounds = window.getBounds();
+            const state = this.canvasState.windows.find(w => w.id === windowId);
+            if (state) {
+                state.x = newBounds.x;
+                state.y = newBounds.y;
+                logger.info(`[CanvasEngine] ${componentName} moved to (${newBounds.x}, ${newBounds.y})`);
+                
+                // PHASE 3 TODO: Emit layout-context-changed event here
+                // this.emit('layout-context-changed', this.getLayoutContext());
+            }
+        });
+
+        window.on('resize', () => {
+            const newBounds = window.getBounds();
+            const state = this.canvasState.windows.find(w => w.id === windowId);
+            if (state) {
+                Object.assign(state, newBounds);
+                logger.info(`[CanvasEngine] ${componentName} resized to ${newBounds.width}x${newBounds.height}`);
+                
+                // PHASE 3 TODO: Emit layout-context-changed event here
+                // this.emit('layout-context-changed', this.getLayoutContext());
+            }
+        });
+
+        window.on('closed', () => {
+            logger.info(`[CanvasEngine] Platform component ${componentName} closed`);
+            this.openWindows.delete(windowId);
+            this.canvasState.windows = this.canvasState.windows.filter(w => w.id !== windowId);
+            
+            // PHASE 3 TODO: Emit layout-context-changed event here
+            // this.emit('layout-context-changed', this.getLayoutContext());
+        });
+
+        logger.info(`[CanvasEngine] ${componentName} tracking initialized at (${bounds.x}, ${bounds.y}) size ${bounds.width}x${bounds.height}`);
     }
 
     /**
@@ -259,7 +394,7 @@ export class CanvasEngine {
                     return END;
                 } else {
                     logger.warn(`[CanvasEngine] Agent provided no tool calls (attempt ${forcedContinuations + 1}/2) - forcing continuation`);
-                    return "agent";
+                return "agent";
                 }
             }
             
@@ -348,39 +483,56 @@ export class CanvasEngine {
 
     /**
      * Build the system prompt from imported template constants
+     * 
+     * PHASE 1: Current implementation with real-time platform component positions
+     * PHASE 2: Use LayoutContextProvider for cleaner context building
+     * PHASE 3: Context-aware prompting with dynamic updates
      */
     private buildSystemPrompt(): string {
         const basePrompt = systemBasePrompt;
         const layoutStrategy = layoutStrategyPrompt;
         
-        // Calculate layout parameters
+        // PHASE 1: Now gets real-time positions thanks to event listeners
         const layoutParams = this.calculateLayoutParameters();
         
-        // Build UI components description
-        const uiComponentsDesc = this.uiComponents.map(comp => 
-            `- ${comp.name}: Rectangle from (${comp.x}, ${comp.y}) to (${comp.x + comp.width}, ${comp.y + comp.height}) - Width: ${comp.width}px, Height: ${comp.height}px`
+        // PHASE 2 TODO: Replace with layoutContextProvider.getUIComponentsDescription()
+        const platformComponents = this.canvasState.windows.filter(w => w.type === 'platform');
+        const uiComponentsDesc = platformComponents.map(comp => 
+            `- ${comp.title || comp.componentName}: Rectangle from (${comp.x}, ${comp.y}) to (${comp.x + comp.width}, ${comp.y + comp.height}) - Width: ${comp.width}px, Height: ${comp.height}px`
         ).join('\n');
         
-        // Build canvas state description  
-        const canvasStateDesc = this.canvasState.windows.length === 0 
-            ? "No windows currently open"
-            : this.canvasState.windows.map(w => 
-                `- Window "${w.id}": ${w.url} at (${w.x}, ${w.y}) size ${w.width}x${w.height} - Title: ${w.title}`
+        // Build user content windows description (browser and app windows)
+        const userWindows = this.canvasState.windows.filter(w => w.type === 'browser' || w.type === 'app');
+        const userWindowsDesc = userWindows.length === 0 
+            ? "No user content windows currently open"
+            : userWindows.map(w => 
+                `- Window "${w.id}": ${w.url || w.componentName} at (${w.x}, ${w.y}) size ${w.width}x${w.height} - Title: ${w.title}`
             ).join('\n');
+
+        // Build available UI components description using the new prompt system
+        const availableUIComponents = this.getAvailableUIComponents();
+        const availableUIComponentsDesc = buildUIComponentsDescription(availableUIComponents);
+
+        // PHASE 3 TODO: Add context freshness timestamp and change detection
+        // This will help the agent understand when the layout context was last updated
 
         // Replace template variables
         const replacements = {
             '{{screenWidth}}': this.workArea.width.toString(),
             '{{screenHeight}}': this.workArea.height.toString(),
-            '{{uiComponents}}': uiComponentsDesc,
+            '{{uiComponents}}': availableUIComponentsDesc,
             '{{defaultX}}': layoutParams.defaultX.toString(),
             '{{defaultY}}': layoutParams.defaultY.toString(),
             '{{defaultHeight}}': layoutParams.defaultHeight.toString(),
             '{{windowGap}}': this.layoutConfig.windowGap.toString(),
             '{{maxUsableWidth}}': layoutParams.maxUsableWidth.toString(),
             '{{minWindowWidth}}': this.layoutConfig.minWindowWidth.toString(),
-            '{{canvasState}}': canvasStateDesc
+            '{{userWindows}}': userWindowsDesc,
+            '{{userWindowCount}}': userWindows.length.toString()
         };
+
+        // Debug logging to see what Gemini is being told
+        logger.info(`[CanvasEngine] System prompt key values - userWindowCount: ${userWindows.length}, userWindows: ${userWindows.length > 0 ? userWindows.map(w => w.id).join(', ') : 'none'}`);
 
         let filledStrategy = layoutStrategy;
         Object.entries(replacements).forEach(([key, value]) => {
@@ -392,6 +544,10 @@ export class CanvasEngine {
 
     /**
      * Calculate layout parameters based on screen and UI components
+     * 
+     * PHASE 1: Current implementation - works with tracked platform components
+     * PHASE 2: Replace with LayoutContextProvider.getAvailableArea()
+     * PHASE 3: Real-time context updates with caching and optimization
      */
     private calculateLayoutParameters() {
         const { screenEdgePadding, menuBarHeight } = this.layoutConfig;
@@ -399,8 +555,11 @@ export class CanvasEngine {
         const defaultX = screenEdgePadding;
         const defaultY = screenEdgePadding + menuBarHeight;
         
+        // PHASE 2 TODO: Replace with generic platform component boundary calculation
+        // const reservedAreas = this.layoutContextProvider.getReservedAreas();
+        
         // Calculate bottom boundary (avoid InputPill)
-        const inputPill = this.uiComponents.find(c => c.name === 'InputPill');
+        const inputPill = this.canvasState.windows.find(w => w.componentName === 'InputPill');
         const maxBottomY = inputPill 
             ? inputPill.y - screenEdgePadding
             : this.workArea.height - 50 - screenEdgePadding;
@@ -408,10 +567,12 @@ export class CanvasEngine {
         const defaultHeight = maxBottomY - defaultY;
         
         // Calculate max usable width (avoid AthenaWidget)
-        const athenaWidget = this.uiComponents.find(c => c.name === 'AthenaWidget');
+        const athenaWidget = this.canvasState.windows.find(w => w.componentName === 'AthenaWidget');
         const maxUsableWidth = athenaWidget
             ? athenaWidget.x - screenEdgePadding - this.layoutConfig.windowGap - defaultX
             : this.workArea.width - 2 * screenEdgePadding;
+        
+        // PHASE 3 TODO: Cache these calculations and only recalculate on layout-context-changed events
         
         return {
             defaultX,
@@ -422,9 +583,30 @@ export class CanvasEngine {
     }
 
     /**
-     * Core window operations
+     * Core window operations - handles both browser windows and UI components
      */
-    private async openWindow(args: z.infer<typeof openWindowSchema>): Promise<CanvasWindowState> {
+    async openWindow(args: z.infer<typeof openWindowSchema>): Promise<CanvasWindowState> {
+        let { url, x, y, width, height, title } = args;
+        
+        // Check for URL schemes first
+        if (url.startsWith('platform://')) {
+            return this.openPlatformComponent(url.replace('platform://', ''), { x, y, width, height, title });
+        }
+        if (url.startsWith('apps://')) {
+            return this.openApplication(url.replace('apps://', ''), { x, y, width, height, title });
+        }
+        if (url.startsWith('widgets://')) {
+            return this.openWidget(url.replace('widgets://', ''), { x, y, width, height, title });
+        }
+        
+        // Default: handle as browser window
+        return this.openBrowserWindow(args);
+    }
+
+    /**
+     * Open a browser window (original functionality)
+     */
+    private async openBrowserWindow(args: z.infer<typeof openWindowSchema>): Promise<CanvasWindowState> {
         let { url, x, y, width, height, title } = args;
         
         // Normalize URL: add https:// if no protocol is specified
@@ -488,13 +670,188 @@ export class CanvasEngine {
             y: bounds.y, 
             width: bounds.width,
             height: bounds.height,
-            title: windowTitle
+            title: windowTitle,
+            type: 'browser'
         };
 
         this.canvasState.windows.push(windowState);
         logger.info(`[CanvasEngine] Window ${windowId} opened successfully`);
         
         return windowState;
+    }
+
+    /**
+     * Open a platform component
+     */
+    private async openPlatformComponent(
+        componentName: string, 
+        options: { x?: number; y?: number; width?: number; height?: number; title?: string }
+    ): Promise<CanvasWindowState> {
+        const config = this.platformRegistry.get(componentName);
+        if (!config) {
+            throw new Error(`Platform component '${componentName}' not found`);
+        }
+
+        // Check if already instantiated
+        let instance = this.platformInstances.get(componentName);
+        if (instance) {
+            // Focus existing window
+            if (instance.window && !instance.window.isDestroyed()) {
+                instance.focus();
+                const bounds = instance.window.getBounds();
+                const existingState = this.canvasState.windows.find(w => w.componentName === componentName);
+                if (existingState) {
+                    return existingState;
+                }
+            }
+        }
+
+        // Create new instance
+        try {
+            const { primaryDisplay, viteDevServerUrl, preloadBasePath } = this.getUIConfig();
+            const preloadPath = path.join(preloadBasePath, `../ui/${config.fullPath}/preload.js`);
+            
+            instance = new config.MainClass(primaryDisplay, viteDevServerUrl, preloadPath);
+            
+            if (instance.init && typeof instance.init === 'function') {
+                instance.init();
+                this.platformInstances.set(componentName, instance);
+                
+                // Get the window and add to tracking
+                if (instance.window) {
+                    const windowId = `platform-${instance.window.id}`;
+                    this.openWindows.set(windowId, instance.window);
+                    
+                    const bounds = instance.window.getBounds();
+                    const windowState: CanvasWindowState = {
+                        id: windowId,
+                        url: `platform://${componentName}`,
+                        x: bounds.x,
+                        y: bounds.y,
+                        width: bounds.width,
+                        height: bounds.height,
+                        title: componentName,
+                        type: 'platform',
+                        componentName
+                    };
+
+                    // Set up event handlers
+                    instance.window.on('closed', () => {
+                        logger.info(`[CanvasEngine] Platform component ${componentName} closed`);
+                        this.openWindows.delete(windowId);
+                        this.platformInstances.delete(componentName);
+                        this.canvasState.windows = this.canvasState.windows.filter(w => w.id !== windowId);
+                    });
+
+                    this.canvasState.windows.push(windowState);
+                    
+                    logger.info(`[CanvasEngine] Platform component ${componentName} opened successfully`);
+                    
+                    return windowState;
+                }
+            }
+        } catch (error) {
+            logger.error(`[CanvasEngine] Failed to initialize platform component ${componentName}:`, error);
+            throw new Error(`Failed to open platform component: ${componentName}`);
+        }
+
+        throw new Error(`Failed to create platform component window: ${componentName}`);
+    }
+
+    /**
+     * Open an application (integrates with UIDiscoveryService to open apps)
+     */
+    private async openApplication(
+        appName: string, 
+        options: { x?: number; y?: number; width?: number; height?: number; title?: string }
+    ): Promise<CanvasWindowState> {
+        // Get available UI components to find the app
+        const availableComponents = this.getAvailableUIComponents();
+        
+        if (!availableComponents.apps.includes(appName)) {
+            throw new Error(`Application '${appName}' not found. Available apps: ${availableComponents.apps.join(', ')}`);
+        }
+
+        // Use UI Discovery Service to initialize the application
+        if (!this.uiDiscoveryService) {
+            throw new Error('UI Discovery Service not available for opening applications');
+        }
+
+        try {
+            // Use UI Discovery Service to initialize the app window
+            const appModule = await this.uiDiscoveryService.initializeUIWindow(appName);
+            
+            if (!appModule || !appModule.instance || !appModule.instance.window) {
+                throw new Error(`Failed to initialize application: ${appName}`);
+            }
+            
+            const instance = appModule.instance;
+            const windowId = `app-${instance.window.id}`;
+            this.openWindows.set(windowId, instance.window);
+            
+            // Apply position/size options if provided
+            if (options.x !== undefined || options.y !== undefined || options.width !== undefined || options.height !== undefined) {
+                const currentBounds = instance.window.getBounds();
+                const newBounds = {
+                    x: options.x ?? currentBounds.x,
+                    y: options.y ?? currentBounds.y,
+                    width: options.width ?? currentBounds.width,
+                    height: options.height ?? currentBounds.height
+                };
+                instance.window.setBounds(newBounds);
+            }
+            
+            const bounds = instance.window.getBounds();
+            const windowState: CanvasWindowState = {
+                id: windowId,
+                url: `apps://${appName}`,
+                x: bounds.x,
+                y: bounds.y,
+                width: bounds.width,
+                height: bounds.height,
+                title: options.title || appName,
+                type: 'app',
+                componentName: appName
+            };
+
+            // Set up event handlers
+            instance.window.on('closed', () => {
+                logger.info(`[CanvasEngine] Application ${appName} closed`);
+                this.openWindows.delete(windowId);
+                this.canvasState.windows = this.canvasState.windows.filter(w => w.id !== windowId);
+            });
+
+            this.canvasState.windows.push(windowState);
+            
+            logger.info(`[CanvasEngine] Application ${appName} opened successfully`);
+            
+            return windowState;
+            
+        } catch (error) {
+            logger.error(`[CanvasEngine] Failed to open application ${appName}:`, error);
+            throw new Error(`Failed to open application: ${appName}. ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * Open a widget (placeholder - will be implemented when integrating with UIDiscoveryService)
+     */
+    private async openWidget(
+        widgetName: string, 
+        options: { x?: number; y?: number; width?: number; height?: number; title?: string }
+    ): Promise<CanvasWindowState> {
+        // TODO: Implement widget opening when integrating with UIDiscoveryService
+        throw new Error(`Widget opening not yet implemented: ${widgetName}`);
+    }
+
+    /**
+     * Get UI configuration
+     */
+    private getUIConfig(): { primaryDisplay: any; viteDevServerUrl: string | undefined; preloadBasePath: string } {
+        if (!this.uiConfig) {
+            throw new Error('UI configuration not set. Call setUIConfig() before creating platform components.');
+        }
+        return this.uiConfig;
     }
 
     /**
@@ -557,19 +914,66 @@ export class CanvasEngine {
         
         // Handle different argument formats due to Gemini schema violations
         if (typeof args === 'string') {
-            // LangChain sometimes passes just the windowId as a string when schema validation partially fails
-            windowId = args;
-            logger.info(`[CanvasEngine] Args received as string (windowId): "${windowId}"`);
+            // Try to parse as JSON string first (common Gemini issue)
+            try {
+                const parsedArgs = JSON.parse(args);
+                if (typeof parsedArgs === 'object' && parsedArgs !== null) {
+                    windowId = parsedArgs.windowId || parsedArgs.input || parsedArgs.id;
+                    x = parsedArgs.x;
+                    y = parsedArgs.y;
+                    width = parsedArgs.width;
+                    height = parsedArgs.height;
+                    logger.info(`[CanvasEngine] Successfully parsed JSON string args - windowId: "${windowId}", x: ${x}, y: ${y}, width: ${width}, height: ${height}`);
+                } else {
+                    // Fallback: treat as plain windowId string
+                    windowId = args;
+                    logger.info(`[CanvasEngine] Args received as plain string (windowId): "${windowId}"`);
+                }
+            } catch (jsonError) {
+                // Check if it's a comma-separated parameter string (another Gemini format)
+                const argsStr = args as string;
+                if (argsStr.includes('windowId=') && argsStr.includes(',')) {
+                    // Parse comma-separated format: "windowId=app-3,x=10,y=50,width=530"
+                    const pairs = argsStr.split(',');
+                    const params: Record<string, any> = {};
+                    
+                    pairs.forEach(pair => {
+                        const [key, value] = pair.split('=');
+                        if (key && value) {
+                            const trimmedKey = key.trim();
+                            const trimmedValue = value.trim();
+                            // Convert numbers
+                            if (!isNaN(Number(trimmedValue))) {
+                                params[trimmedKey] = Number(trimmedValue);
+                            } else {
+                                params[trimmedKey] = trimmedValue;
+                            }
+                        }
+                    });
+                    
+                    windowId = params.windowId;
+                    x = params.x;
+                    y = params.y;
+                    width = params.width;
+                    height = params.height;
+                    logger.info(`[CanvasEngine] Parsed comma-separated args - windowId: "${windowId}", x: ${x}, y: ${y}, width: ${width}, height: ${height}`);
+                } else {
+                    // Not valid JSON and not comma-separated, treat as plain windowId string
+                    windowId = argsStr;
+                    logger.info(`[CanvasEngine] Args received as non-JSON string (windowId): "${windowId}"`);
+                }
+            }
         } else if (typeof args === 'object' && args !== null) {
             const rawArgs = args as any;
             // Try multiple field names that Gemini might use
-            windowId = args.windowId || rawArgs.input || rawArgs.id || rawArgs.windowId;
-            x = args.x;
-            y = args.y; 
-            width = args.width;
-            height = args.height;
+            windowId = args.windowId || rawArgs.input || rawArgs.id;
+            x = args.x || rawArgs.x;
+            y = args.y || rawArgs.y; 
+            width = args.width || rawArgs.width;
+            height = args.height || rawArgs.height;
             
-            logger.info(`[CanvasEngine] Args received as object - windowId: "${args.windowId}", input: "${rawArgs.input}", final: "${windowId}"`);
+            logger.info(`[CanvasEngine] Args received as object - windowId: "${args.windowId}", input: "${rawArgs.input}", final windowId: "${windowId}"`);
+            logger.info(`[CanvasEngine] Extracted parameters - x: ${x}, y: ${y}, width: ${width}, height: ${height}`);
         }
         
         if (!windowId) {
@@ -577,58 +981,11 @@ export class CanvasEngine {
             return { id: 'unknown', status: 'missing_id' };
         }
 
-        // ======================================================================
-        // 🚨 GEMINI-SPECIFIC WORKAROUND - REMOVE WHEN MIGRATING TO OPENAI/CLAUDE  
-        // ======================================================================
-        // When Gemini's schema violations cause parameter loss, this provides intelligent
-        // layout fallbacks. With proper LLMs, this entire block becomes unnecessary as
-        // parameters will be correctly provided by the LLM.
-        if (typeof args === 'string' || (x === undefined && y === undefined && width === undefined && height === undefined)) {
-            logger.info(`[CanvasEngine] Missing resize parameters due to schema filtering. Calculating smart defaults.`);
-            
-            const layoutParams = this.calculateLayoutParameters();
-            const windowCount = this.canvasState.windows.length;
-            const windowIndex = this.canvasState.windows.findIndex(w => w.id === windowId);
-            
-            logger.info(`[CanvasEngine] Context: ${windowCount} windows total, resizing window ${windowIndex + 1}`);
-            
-            // Detect if we're preparing for a 3+ window layout by checking recent conversation
-            // If we're resizing existing windows, Gemini is likely preparing for a new window
-            const isPreparingForNewWindow = windowCount >= 2; // Assume 3-window layout if resizing with 2+ windows
-            const targetLayout = isPreparingForNewWindow ? 3 : windowCount + 1;
-            
-            logger.info(`[CanvasEngine] Detected layout intent: ${targetLayout}-window layout (preparing: ${isPreparingForNewWindow})`);
-            
-            // Smart layout based on predicted final layout
-            if (targetLayout <= 2) {
-                // 2-window side-by-side layout
-                x = layoutParams.defaultX; 
-                y = layoutParams.defaultY;   
-                width = Math.floor(layoutParams.maxUsableWidth / 2) - Math.floor(this.layoutConfig.windowGap / 2);
-                height = layoutParams.defaultHeight;
-                                 logger.info(`[CanvasEngine] Using 2-window side-by-side layout`);
-             } else {
-                 // 3+ window layout: first window takes top half, others split bottom
-                 if (windowIndex === 0) {
-                     // First window: full width, top half
-                     x = layoutParams.defaultX;
-                     y = layoutParams.defaultY;
-                     width = layoutParams.maxUsableWidth;
-                     height = Math.floor(layoutParams.defaultHeight / 2) - Math.floor(this.layoutConfig.windowGap / 2);
-                     logger.info(`[CanvasEngine] Using 3-window layout: first window (top half)`);
-                 } else {
-                     // Other windows: split bottom half
-                     const expectedBottomWindows = Math.max(2, targetLayout - 1); // At least 2 bottom windows for 3+ layout
-                     const bottomWidth = Math.floor(layoutParams.maxUsableWidth / expectedBottomWindows) - Math.floor(this.layoutConfig.windowGap / 2);
-                     x = layoutParams.defaultX + (windowIndex - 1) * (bottomWidth + this.layoutConfig.windowGap);
-                     y = layoutParams.defaultY + Math.floor(layoutParams.defaultHeight / 2) + this.layoutConfig.windowGap;
-                     width = bottomWidth;
-                     height = Math.floor(layoutParams.defaultHeight / 2) - Math.floor(this.layoutConfig.windowGap / 2);
-                     logger.info(`[CanvasEngine] Using 3-window layout: bottom window ${windowIndex} (expecting ${expectedBottomWindows} bottom windows)`);
-                 }
-            }
-            
-            logger.info(`[CanvasEngine] Using smart fallback resize: x=${x}, y=${y}, width=${width}, height=${height}`);
+        // Log whether we're using provided parameters or not
+        if (x !== undefined || y !== undefined || width !== undefined || height !== undefined) {
+            logger.info(`[CanvasEngine] Using provided parameters: x=${x}, y=${y}, width=${width}, height=${height}`);
+        } else {
+            logger.info(`[CanvasEngine] No resize parameters provided - window will remain unchanged`);
         }
 
         const windowInstance = this.openWindows.get(windowId);
@@ -686,87 +1043,35 @@ export class CanvasEngine {
         }
     }
 
-
-
     /**
-     * Send user input to the persistent conversational agent
-     * Uses LangGraph's built-in persistence for conversation memory
+     * Main entry point for processing user requests
      */
     async invoke(userInput: string): Promise<string> {
         logger.info(`[CanvasEngine] Processing user input: "${userInput}"`);
         
-        const initialWindowCount = this.canvasState.windows.length;
-        
         try {
             const config = { configurable: { thread_id: this.threadId } };
-            const input = { messages: [new HumanMessage(userInput)] };
-            
-            // Use invoke instead of stream to avoid AbortSignal accumulation
-            await this.graph.invoke(input, config);
-            
-            // Generate action summary based on tool executions and canvas state changes
-            const actionSummary = this.generateActionSummary(userInput, initialWindowCount);
+            const result = await this.graph.invoke(
+                { messages: [new HumanMessage(userInput)] },
+                config
+            );
             
             logger.info(`[CanvasEngine] Completed processing. Windows: ${this.canvasState.windows.length}`);
-            return actionSummary;
             
+            // Return the LLM's final response instead of generating custom summaries
+            const lastMessage = result.messages[result.messages.length - 1];
+            if (lastMessage && lastMessage.content) {
+                return lastMessage.content;
+            }
+            
+            return "Task completed.";
         } catch (error: any) {
-            logger.error(`[CanvasEngine] Error processing request:`, error);
-            throw new Error(`Failed to process request: ${error.message}`);
+            logger.error(`[CanvasEngine] Error processing user input:`, error);
+            return `❌ Error: ${error.message}. Please try again with a simpler command.`;
         }
     }
 
-    /**
-     * Generate a meaningful summary of actions performed for display in AthenaWidget
-     */
-    private generateActionSummary(userInput: string, initialWindowCount: number): string {
-        const currentWindowCount = this.canvasState.windows.length;
-        const windowChange = currentWindowCount - initialWindowCount;
-        
-        // Detect the type of request
-        const lowerInput = userInput.toLowerCase().trim();
-        
-        if (lowerInput.startsWith('open ')) {
-            const match = lowerInput.match(/^open\s+(.+)$/);
-            const targetSite = match ? match[1] : 'site';
-            
-            if (windowChange > 0) {
-                // New window was opened
-                const newWindow = this.canvasState.windows[this.canvasState.windows.length - 1];
-                if (currentWindowCount === 1) {
-                    return `✅ Opened ${targetSite}`;
-                } else {
-                    return `✅ Arranged ${currentWindowCount} windows and opened ${targetSite}`;
-                }
-            } else {
-                return `❌ Failed to open ${targetSite}`;
-            }
-        }
-        
-        if (lowerInput.includes('close all')) {
-            if (currentWindowCount === 0) {
-                return `✅ Closed all windows`;
-            } else {
-                return `⚠️ Closed some windows (${currentWindowCount} remaining)`;
-            }
-        }
-        
-        if (lowerInput.startsWith('close ')) {
-            const closedCount = Math.abs(windowChange);
-            if (closedCount > 0) {
-                return `✅ Closed ${closedCount} window${closedCount > 1 ? 's' : ''}`;
-            } else {
-                return `⚠️ No windows were closed`;
-            }
-        }
-        
-        // For other operations (resize, move, etc.)
-        if (currentWindowCount > 0) {
-            return `✅ Canvas updated (${currentWindowCount} window${currentWindowCount > 1 ? 's' : ''})`;
-        } else {
-            return `✅ Task completed`;
-        }
-    }
+
 
     /**
      * Get current canvas state (read-only)
@@ -787,15 +1092,35 @@ export class CanvasEngine {
 
     /**
      * Cleanup method to call when destroying the engine
+     * 
+     * PHASE 1: Enhanced cleanup with platform component handling
+     * PHASE 2: WindowTracker cleanup
+     * PHASE 3: Event listener cleanup and resource disposal
      */
     destroy(): void {
-        this.openWindows.forEach(window => {
+        // PHASE 1: Clean up all tracked windows (including platform components)
+        this.openWindows.forEach((window, windowId) => {
             if (!window.isDestroyed()) {
-                window.close();
+                // Remove all our event listeners before closing
+                window.removeAllListeners('move');
+                window.removeAllListeners('resize');
+                window.removeAllListeners('closed');
+                
+                // Only close browser windows, not platform components
+                const windowState = this.canvasState.windows.find(w => w.id === windowId);
+                if (windowState?.type === 'browser') {
+                    window.close();
+                }
             }
         });
+        
         this.openWindows.clear();
         this.canvasState.windows = [];
-        logger.info('[CanvasEngine] Engine destroyed and resources cleaned up');
+        this.platformInstances.clear();
+        
+        // PHASE 3 TODO: Remove EventEmitter listeners
+        // this.removeAllListeners();
+        
+        logger.info('[CanvasEngine] Engine destroyed and all resources cleaned up');
     }
 }

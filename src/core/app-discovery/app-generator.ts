@@ -54,14 +54,36 @@ export class AppGenerator {
             appName = fullAppName;
         }
         
-        const appDir = path.join(this.options.uiDir, appType, appName);
+        // Normalize directory name to kebab-case for consistency
+        const normalizedAppName = this.toKebabCase(appName);
+        const appDir = path.join(this.options.uiDir, appType, normalizedAppName);
         
         return {
-            fullAppName: `${appType}/${appName}`,
-            appName,
+            fullAppName: `${appType}/${normalizedAppName}`,
+            appName: normalizedAppName,
             category: appType,
             appDir
         };
+    }
+
+    private toPascalCase(str: string): string {
+        return str
+            .split(/[-_\s]+/)
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join('');
+    }
+
+    private toCamelCase(str: string): string {
+        const pascal = this.toPascalCase(str);
+        return pascal.charAt(0).toLowerCase() + pascal.slice(1);
+    }
+
+    private toKebabCase(str: string): string {
+        return str
+            .replace(/([a-z])([A-Z])/g, '$1-$2')  // camelCase to kebab-case
+            .replace(/[\s_]+/g, '-')              // spaces and underscores to hyphens
+            .toLowerCase()
+            .replace(/^-+|-+$/g, '');             // trim leading/trailing hyphens
     }
 
 
@@ -107,8 +129,8 @@ export class AppGenerator {
 
     private async generateMainClass(): Promise<void> {
         const { fullAppName, appName, appDir } = this.parsedAppInfo;
-        const className = `${appName}Window`;
-        const fileName = `${appName.toLowerCase()}.main.ts`;
+        const className = `${this.toPascalCase(appName)}Window`;
+        const fileName = `${appName}.main.ts`;  // Already kebab-case from normalization
         
         const content = `import { BrowserWindow, Display, app } from 'electron';
 import * as path from 'path';
@@ -185,14 +207,14 @@ export class ${className} {
 
     private async generateIpcHandlers(): Promise<void> {
         const { appName, appDir } = this.parsedAppInfo;
-        const fileName = `${appName.toLowerCase()}.ipc.ts`;
-        const handlerName = `${appName}IpcHandlers`;
-        const windowClass = `${appName}Window`;
+        const fileName = `${appName}.ipc.ts`;  // Already kebab-case from normalization
+        const handlerName = `${this.toPascalCase(appName)}IpcHandlers`;
+        const windowClass = `${this.toPascalCase(appName)}Window`;
         
         const content = `import { IpcMain } from 'electron';
 import { CanvasEngine } from '@core/engine/canvas-engine';
 import { AppIpcModule, AppMainProcessInstances } from '@core/bridge/types';
-import { ${windowClass} } from '@ui/${this.parsedAppInfo.fullAppName}/${appName.toLowerCase()}.main';
+        import { ${windowClass} } from '@ui/${this.parsedAppInfo.fullAppName}/${appName}.main';
 import * as logger from '@utils/logger';
 
 const ${handlerName}: AppIpcModule = {
@@ -207,7 +229,7 @@ const ${handlerName}: AppIpcModule = {
         logger.info('[${appName}IPC] Registering ${appName} IPC handlers');
 
         // Example: Handle app-specific events
-        ipcMain.handle('${appName.toLowerCase()}:example-action', async (event, data) => {
+        ipcMain.handle('${appName}:example-action', async (event, data) => {
             try {
                 logger.info(\`[${appName}IPC] Example action called with:\`, data);
                 // Add your app-specific logic here
@@ -219,7 +241,7 @@ const ${handlerName}: AppIpcModule = {
         });
 
         // Focus the app window
-        ipcMain.on('${appName.toLowerCase()}:focus', () => {
+        ipcMain.on('${appName}:focus', () => {
             if (appInstance && appInstance.window && !appInstance.window.isDestroyed()) {
                 appInstance.focus();
             }
@@ -375,10 +397,11 @@ body {
 
     private async generateReactRenderer(): Promise<void> {
         const { appName, appDir } = this.parsedAppInfo;
+        const componentName = `${this.toPascalCase(appName)}App`;
         
         const content = `import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { ${appName}App } from './components/${appName}App';
+import { ${componentName} } from './components/${componentName}';
 
 const container = document.getElementById('${appName.toLowerCase()}-root');
 if (!container) {
@@ -386,7 +409,7 @@ if (!container) {
 }
 
 const root = createRoot(container);
-root.render(<${appName}App />);`;
+root.render(<${componentName} />);`;
 
         const filePath = path.join(appDir, 'src', 'renderer.tsx');
         fs.writeFileSync(filePath, content);
@@ -395,8 +418,8 @@ root.render(<${appName}App />);`;
 
     private async generateReactComponent(): Promise<void> {
         const { appName, appDir } = this.parsedAppInfo;
-        const componentName = `${appName}App`;
-        const apiName = `${appName.toLowerCase()}API`;
+        const componentName = `${this.toPascalCase(appName)}App`;
+        const apiName = `${this.toCamelCase(appName)}API`;
         
         // Create components directory
         const componentsDir = path.join(appDir, 'src', 'components');
@@ -450,7 +473,7 @@ export const ${componentName}: React.FC = () => {
         <div className="${appName.toLowerCase()}-app">
             {/* Header */}
             <div className="${appName.toLowerCase()}-header">
-                <h1 className="${appName.toLowerCase()}-title">${appName}</h1>
+                <h1 className="${appName.toLowerCase()}-title">${this.toPascalCase(appName)}</h1>
                 <button 
                     className="btn" 
                     onClick={handleExampleAction}
@@ -471,7 +494,7 @@ export const ${componentName}: React.FC = () => {
                     </div>
                 ) : (
                     <div className="empty-state">
-                        Welcome to ${appName}!<br />
+                        Welcome to ${this.toPascalCase(appName)}!<br />
                         Click "Example Action" to get started.
                     </div>
                 )}
@@ -487,7 +510,7 @@ export const ${componentName}: React.FC = () => {
 
     private async generateVanillaRenderer(): Promise<void> {
         const { appName, appDir } = this.parsedAppInfo;
-        const apiName = `${appName.toLowerCase()}API`;
+        const apiName = `${this.toCamelCase(appName)}API`;
         
         const content = `const appRoot = document.getElementById('${appName.toLowerCase()}-root');
 
@@ -499,12 +522,12 @@ if (!appRoot) {
 appRoot.innerHTML = \`
     <div class="${appName.toLowerCase()}-app">
         <div class="${appName.toLowerCase()}-header">
-            <h1 class="${appName.toLowerCase()}-title">${appName}</h1>
+            <h1 class="${appName.toLowerCase()}-title">${this.toPascalCase(appName)}</h1>
             <button id="example-btn" class="btn">Example Action</button>
         </div>
         <div class="${appName.toLowerCase()}-content">
             <div id="content-area" class="empty-state">
-                Welcome to ${appName}!<br />
+                Welcome to ${this.toPascalCase(appName)}!<br />
                 Click "Example Action" to get started.
             </div>
         </div>

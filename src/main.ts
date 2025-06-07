@@ -27,34 +27,30 @@ const initializeApp = async (): Promise<void> => {
 
     const primaryDisplay: Display = screen.getPrimaryDisplay();
     
-    // Initialize UI Discovery Service
-    uiDiscoveryService = new UIDiscoveryService({
-        uiDir: 'src/ui',
-        primaryDisplay,
-        viteDevServerUrl: VITE_DEV_SERVER_URL,
-        preloadBasePath: __dirname,
-    });
-
-    // Discover and initialize all UI components automatically
-    const { appInstances, appModules } = await uiDiscoveryService.discoverAndInitializeUIComponents();
-    
-    // Initialize Core Engine
+    // Initialize Core Engine first (without platform windows)
     try {
-        // Get specific app instances for engine initialization
-        const inputPillInstance = appInstances.get('InputPill');
-        const athenaWidgetInstance = appInstances.get('AthenaWidget');
-        
-        canvasEngineInstance = initializeCanvasEngineAuto(
-            inputPillInstance?.window ?? undefined, 
-            athenaWidgetInstance?.window ?? undefined
-        );
-        
+        canvasEngineInstance = initializeCanvasEngineAuto();
         logger.info(`[initializeApp] Canvas Engine initialized successfully.`);
     } catch (error) {
         logger.error(`[initializeApp] Critical error during CanvasEngine initialization: ${error instanceof Error ? error.message : String(error)}. Application will exit.`);
         app.quit();
         return;
     }
+
+    // Initialize UI Discovery Service with Canvas Engine
+    uiDiscoveryService = new UIDiscoveryService({
+        uiDir: 'src/ui',
+        primaryDisplay,
+        viteDevServerUrl: VITE_DEV_SERVER_URL,
+        preloadBasePath: __dirname,
+        canvasEngine: canvasEngineInstance,
+    });
+
+    // Set UI Discovery Service reference in Canvas Engine for accessing available components
+    canvasEngineInstance.setUIDiscoveryService(uiDiscoveryService);
+
+    // Discover and initialize all UI components automatically
+    const { appInstances, appModules } = await uiDiscoveryService.discoverAndInitializeUIComponents();
 
     // Register IPC Handlers (after engine and UI components are ready)
     if (canvasEngineInstance) {

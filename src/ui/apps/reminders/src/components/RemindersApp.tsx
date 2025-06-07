@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 
-interface NotesAppState {
+interface RemindersAppState {
     isLoading: boolean;
     error: string | null;
     data: any;
 }
 
-export const NotesApp: React.FC = () => {
-    const [state, setState] = useState<NotesAppState>({
+export const RemindersApp: React.FC = () => {
+    const [state, setState] = useState<RemindersAppState>({
         isLoading: false,
         error: null,
         data: null,
@@ -17,7 +17,7 @@ export const NotesApp: React.FC = () => {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
         
         try {
-            const result = await window.notesAPI.exampleAction({ example: 'data' });
+            const result = await window.remindersAPI.exampleAction({ example: 'data' });
             if (result.success) {
                 setState(prev => ({
                     ...prev,
@@ -41,10 +41,10 @@ export const NotesApp: React.FC = () => {
     };
 
     return (
-        <div className="notes-app">
+        <div className="reminders-app">
             {/* Header */}
-            <div className="notes-header">
-                <h1 className="notes-title">Notes</h1>
+            <div className="reminders-header">
+                <h1 className="reminders-title">Reminders</h1>
                 <button 
                     className="btn" 
                     onClick={handleExampleAction}
@@ -55,7 +55,7 @@ export const NotesApp: React.FC = () => {
             </div>
 
             {/* Content */}
-            <div className="notes-content">
+            <div className="reminders-content">
                 {state.error ? (
                     <div className="empty-state">Error: {state.error}</div>
                 ) : state.data ? (
@@ -65,7 +65,7 @@ export const NotesApp: React.FC = () => {
                     </div>
                 ) : (
                     <div className="empty-state">
-                        Welcome to Notes!<br />
+                        Welcome to Reminders!<br />
                         Click "Example Action" to get started.
                     </div>
                 )}

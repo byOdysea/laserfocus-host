@@ -1,7 +1,9 @@
+import type { PlatformComponentConfig } from '@/lib/types/canvas';
 import { AppIpcModule, AppMainProcessInstances } from '@core/bridge/types';
 import * as logger from '@utils/logger';
 import { Display } from 'electron';
 import * as path from 'path';
+import { CanvasEngine } from '../engine/canvas-engine';
 
 interface AppModule {
     name: string;
@@ -17,6 +19,7 @@ interface UIDiscoveryConfig {
     primaryDisplay: Display;
     viteDevServerUrl: string | undefined;
     preloadBasePath: string;
+    canvasEngine?: CanvasEngine;
 }
 
 interface UIComponentRegistry {
@@ -213,21 +216,71 @@ export class UIDiscoveryService {
     }
 
     private async initializePlatformComponents(): Promise<void> {
-        const { primaryDisplay, viteDevServerUrl, preloadBasePath } = this.config;
+        const { canvasEngine } = this.config;
         
-        for (const [appName, app] of this.platformComponents) {
-            if (app.mainClass) {
-                try {
-                    const preloadPath = path.join(preloadBasePath, `../ui/${app.fullPath}/preload.js`);
-                    const instance = new app.mainClass(primaryDisplay, viteDevServerUrl, preloadPath);
+        if (canvasEngine) {
+            // NEW PATH: Use Canvas Engine for unified window management
+            logger.info('[UIDiscovery] Using Canvas Engine for platform component initialization');
+            
+            // Set UI configuration in Canvas Engine
+            const { primaryDisplay, viteDevServerUrl, preloadBasePath } = this.config;
+            canvasEngine.setUIConfig({ primaryDisplay, viteDevServerUrl, preloadBasePath });
+            
+            // Register all platform components with Canvas Engine
+            for (const [appName, app] of this.platformComponents) {
+                if (app.mainClass) {
+                    const platformConfig: PlatformComponentConfig = {
+                        name: appName,
+                        MainClass: app.mainClass,
+                        behavior: 'auto-start',
+                        layer: 'system',
+                        fullPath: app.fullPath
+                    };
                     
-                    if (instance.init && typeof instance.init === 'function') {
-                        instance.init();
-                        app.instance = instance;
-                        logger.info(`[UIDiscovery] Initialized platform UI component: ${appName}`);
+                    canvasEngine.registerPlatformComponent(platformConfig);
+                    logger.info(`[UIDiscovery] Registered platform component with Canvas Engine: ${appName}`);
+                }
+            }
+            
+            // Auto-start platform components through Canvas Engine
+            for (const [appName, app] of this.platformComponents) {
+                if (app.mainClass) {
+                    try {
+                        await canvasEngine.openWindow({
+                            url: `platform://${appName}`,
+                            x: 0, y: 0, width: 400, height: 600 // Canvas Engine will use component defaults
+                        });
+                        
+                        // Get the instance from Canvas Engine for IPC registration
+                        const platformInstance = canvasEngine.getPlatformInstance(appName);
+                        if (platformInstance) {
+                            app.instance = platformInstance;
+                            logger.info(`[UIDiscovery] Platform component auto-started via Canvas Engine: ${appName}`);
+                        }
+                    } catch (error) {
+                        logger.error(`[UIDiscovery] Failed to auto-start platform component ${appName} via Canvas Engine:`, error);
                     }
-                } catch (error) {
-                    logger.error(`[UIDiscovery] Failed to initialize platform UI component ${appName}:`, error);
+                }
+            }
+        } else {
+            // LEGACY PATH: Direct instantiation (preserve current behavior)
+            logger.info('[UIDiscovery] Using direct instantiation for platform components (legacy mode)');
+            const { primaryDisplay, viteDevServerUrl, preloadBasePath } = this.config;
+            
+            for (const [appName, app] of this.platformComponents) {
+                if (app.mainClass) {
+                    try {
+                        const preloadPath = path.join(preloadBasePath, `../ui/${app.fullPath}/preload.js`);
+                        const instance = new app.mainClass(primaryDisplay, viteDevServerUrl, preloadPath);
+                        
+                        if (instance.init && typeof instance.init === 'function') {
+                            instance.init();
+                            app.instance = instance;
+                            logger.info(`[UIDiscovery] Initialized platform UI component: ${appName}`);
+                        }
+                    } catch (error) {
+                        logger.error(`[UIDiscovery] Failed to initialize platform UI component ${appName}:`, error);
+                    }
                 }
             }
         }

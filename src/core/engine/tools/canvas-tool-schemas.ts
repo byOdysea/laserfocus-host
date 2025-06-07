@@ -60,13 +60,7 @@ export const resizeAndMoveWindowSchema = z.object({
         .min(100, "Height must be at least 100 pixels")
         .optional()
         .describe("New height of the window in pixels")
-}).refine(
-    (data) => data.x !== undefined || data.y !== undefined || data.width !== undefined || data.height !== undefined,
-    {
-        message: "At least one geometry parameter (x, y, width, height) must be provided",
-        path: ["geometry"]
-    }
-);
+});
 
 export const openAppSchema = z.object({
     appName: z.string()

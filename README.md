@@ -74,9 +74,10 @@ LaserFocus is an Electron-based desktop application that leverages an AI agent t
 "resize the google window"
 "close the notes app"
 
-# Built-in apps (coming soon)
-"open notes app"
-"open calendar and arrange it side by side with notes"
+# Built-in apps (✅ Available Now)
+"open notes app"              # Opens the notes app
+"open reminders app"          # Opens the reminders app
+"open notes and arrange it side by side with reminders"
 ```
 
 ## Core Architecture
@@ -92,12 +93,33 @@ The Canvas Engine is the central orchestrator that manages the entire applicatio
 - **AI Agent Integration**: Hosts and invokes the LangGraph-based AI agent
 - **State Persistence**: Maintains conversation history and window states across sessions
 - **Tool Execution**: Provides tools for the agent to interact with the windowing system
+- **Platform Component Management**: Tracks and manages built-in UI components and apps
+- **UI Discovery Service**: Automatically discovers and registers available components
 
 **Advanced Features:**
 - **Memory Management**: AbortController lifecycle prevents memory leaks
 - **Request Validation**: Ensures all multi-step operations complete successfully
-- **Layout Intelligence**: Automatic window arrangement strategies
+- **Layout Intelligence**: Automatic window arrangement strategies with critical compliance rules
 - **Error Recovery**: Graceful handling of malformed requests and edge cases
+- **UI Component Integration**: Seamless management of platform components like InputPill and AthenaWidget
+- **Architectural Evolution**: Three-phase roadmap for progressive enhancement
+
+**Architectural Evolution Roadmap:**
+
+**Phase 1 (Current)**: Foundation & Discovery
+- ✅ UI Discovery Service integration
+- ✅ Platform component tracking (InputPill, AthenaWidget)
+- ✅ Basic component registration and lifecycle management
+
+**Phase 2 (In Progress)**: AI-Driven UI Management
+- 🔄 Natural language UI component control
+- 🔄 Dynamic component positioning and resizing
+- 🔄 Context-aware component interactions
+
+**Phase 3 (Future)**: Advanced Integration
+- 🔮 Cross-component state synchronization
+- 🔮 Intelligent workspace orchestration
+- 🔮 Adaptive UI layouts based on user behavior
 
 ```typescript
 // Example Canvas Engine usage
@@ -168,54 +190,185 @@ export const openWindowSchema = z.object({
 
 ### Modern IPC Bridge (`src/core/bridge/`)
 
-**Modular Architecture:**
+**Enhanced Modular Architecture:**
 - Each UI component defines its own IPC handlers via `AppIpcModule` interface
 - Type-safe communication between processes using TypeScript
 - Centralized coordination through `initializeBridge()` function
+- **Conversation Monitoring**: AthenaWidget tracks all agent interactions in real-time
 
 **Key Components:**
-- `bridge.service.ts`: Central IPC coordination and modern `run-agent` handler
+- `bridge.service.ts`: Central IPC coordination with enhanced `run-agent` handler
 - `types.ts`: Type definitions for cross-process communication and `AppIpcModule` interface
-- App-specific IPC modules: `InputPillIpcHandlers`, `AthenaWidgetIpcHandlers`
+- App-specific IPC modules: `InputPillIpcHandlers`, `AthenaWidgetIpcHandlers`, `notesIpcHandlers`, `remindersIpcHandlers`
+
+**Enhanced Agent Communication Flow:**
+```typescript
+// Modern 'run-agent' handler with conversation monitoring
+ipcMain.handle('run-agent', async (event, userQuery: string) => {
+  try {
+    // 1. Send user query to AthenaWidget for monitoring
+    if (appInstances.has('athena')) {
+      const athenaWindow = appInstances.get('athena');
+      athenaWindow?.window?.webContents?.send('user-query', userQuery);
+    }
+
+    // 2. Process with Canvas Engine
+    const result = await canvasEngine.invoke(userQuery);
+    
+    // 3. Handle empty responses gracefully
+    const isEmptyResponse = !result || 
+      result.trim() === '' || 
+      result.trim() === 'undefined';
+    
+    const finalResult = isEmptyResponse ? '✓ Task completed' : result;
+
+    // 4. Send response to both requester and AthenaWidget
+    if (appInstances.has('athena')) {
+      const athenaWindow = appInstances.get('athena');
+      athenaWindow?.window?.webContents?.send('agent-response', finalResult);
+    }
+
+    return finalResult;
+  } catch (error) {
+    // Error handling with monitoring
+    const errorMessage = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    
+    if (appInstances.has('athena')) {
+      const athenaWindow = appInstances.get('athena');
+      athenaWindow?.window?.webContents?.send('agent-error', errorMessage);
+    }
+    
+    throw error;
+  }
+});
+```
 
 **Handler Registration Flow:**
 ```typescript
 // Each app defines its IPC module
 const appModules: AppIpcModule[] = [
-  InputPillIpcHandlers,   // Handles InputPill-specific events
-  AthenaWidgetIpcHandlers // Handles AthenaWidget-specific events
+  InputPillIpcHandlers,    // Handles InputPill-specific events
+  AthenaWidgetIpcHandlers, // Handles AthenaWidget conversation monitoring
+  notesIpcHandlers,        // Handles notes app interactions
+  remindersIpcHandlers     // Handles reminders app interactions
 ];
 
-// Bridge service registers all handlers
+// Bridge service registers all handlers with Canvas Engine integration
 initializeBridge(canvasEngine, appModules, appInstances);
 ```
 
+**Conversation Monitoring Features:**
+- **Real-time Updates**: AthenaWidget receives all user queries and agent responses
+- **Error Tracking**: Failed operations are displayed with context
+- **Empty Response Handling**: Meaningless responses are converted to completion markers
+- **Multi-window Support**: All platform components participate in conversation flow
+
 ## Layout Intelligence
+
+### Critical Window Layout Strategy Guidelines
+
+**⚠️ MANDATORY COMPLIANCE RULES:**
+1. **NEVER position windows at x=0** - Always respect screenEdgePadding
+2. **NEVER create overlapping windows** - Each window must have unique, non-overlapping bounds
+3. **ALWAYS maintain proper gaps** - Use consistent windowGap spacing between windows
+4. **ALWAYS account for menu bar** - Factor in menuBarHeight for y-positioning
 
 ### Automatic Layout Strategies
 
-The Canvas Engine includes sophisticated layout algorithms:
+The Canvas Engine includes sophisticated layout algorithms with strict compliance enforcement:
 
 **Single Window**: Full screen utilization (1070×776)
+- Position: x=10, y=50, width=1070, height=776
+- Respects all padding and menu bar constraints
 
 **Two Windows**: Side-by-side layout (530×776 each)
+- Left: x=10, y=50, width=530, height=776
+- Right: x=550, y=50, width=530, height=776
+- Maintains 10px gap between windows
 
 **Three+ Windows**: Intelligent top/bottom splits
-- Top window: Full width, half height (1070×388)
-- Bottom windows: Side-by-side in remaining space (530×388 each)
+- Top window: x=10, y=50, width=1070, height=378
+- Bottom left: x=10, y=438, width=530, height=378  
+- Bottom right: x=550, y=438, width=530, height=378
+- Vertical gap of 10px between top and bottom rows
 
 **Grid Layouts**: For 4+ windows, automatic grid arrangements
+- Calculates optimal rows/columns based on window count
+- Maintains consistent gaps and proportional sizing
+
+### Layout Decision Tree
+
+**Adding Second Window (Critical Implementation)**:
+```
+User Content Windows = 1 → Apply Side-by-Side Strategy
+├── Existing window bounds: get current position/size
+├── Calculate left position: x=10, width=530
+├── Calculate right position: x=550, width=530
+├── Move existing window to left position
+└── Create new window at right position
+```
+
+**For 3+ Windows**:
+```
+User Content Windows ≥ 3 → Apply Top/Bottom Split Strategy
+├── Top: Single window, full width, half height
+├── Bottom: Remaining windows in side-by-side arrangement
+└── Maintain consistent gaps throughout
+```
 
 ### Layout Configuration
 
 ```typescript
 interface LayoutConfig {
-  screenEdgePadding: number;    // 10px default
+  screenEdgePadding: number;    // 10px default - CRITICAL: never use x=0
   windowGap: number;           // 10px spacing between windows
   menuBarHeight: number;       // 40px macOS menu bar
   minWindowWidth: number;      // 300px minimum
+  screenWidth: number;         // 1090px available space
+  screenHeight: number;        // 826px available space
+}
+
+// New Canvas Engine Type Definitions
+interface CanvasWindowState {
+  id: string;
+  bounds: { x: number; y: number; width: number; height: number };
+  url?: string;
+  title?: string;
+  isVisible: boolean;
+  type: 'browser' | 'app' | 'platform';
+}
+
+interface CanvasState {
+  windows: Map<string, CanvasWindowState>;
+  platformComponents: Map<string, UIComponentBounds>;
+  layoutConfig: LayoutConfig;
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
+}
+
+interface UIComponentBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isVisible: boolean;
+  componentId: string;
+}
+
+interface LLMConfig {
+  modelName: string;
+  apiKey: string;
+  temperature?: number;
+  maxTokens?: number;
 }
 ```
+
+### Window Positioning Validation
+
+Every window position is validated against:
+- **Boundary Checks**: Ensure x ≥ screenEdgePadding, y ≥ menuBarHeight
+- **Overlap Detection**: Verify no two windows share the same bounds
+- **Size Constraints**: Enforce minimum width/height requirements
+- **Gap Compliance**: Validate proper spacing between adjacent windows
 
 ## Request Processing & Validation
 
@@ -305,45 +458,52 @@ private normalizeUrl(url: string): string {
 
 LaserFocus provides a powerful architecture for developing standalone applications that can be managed by the Canvas Engine. Each app in `src/apps/` is a complete, self-contained application with its own UI, logic, and build configuration.
 
-#### App Structure Pattern
+#### Standardized App Structure Pattern
 
-Each app follows a consistent structure that enables easy development and integration:
+Each app follows a **strict, standardized structure** that enables seamless Canvas Engine integration and automatic discovery:
 
 ```
-src/apps/YourApp/
-├── index.html          # Entry point HTML
-├── renderer.ts         # Client-side logic (can be React, Vue, vanilla JS/TS)
-├── style.css           # App-specific styles
-├── preload.ts          # Secure bridge between main and renderer
-├── your-app.main.ts    # Main process window management
-└── your-app.ipc.ts     # IPC handlers (implements AppIpcModule)
+src/ui/apps/your-app/           # Lowercase, kebab-case directory name
+├── src/                        # Source files subdirectory
+│   ├── index.html             # Entry point HTML
+│   ├── renderer.tsx           # React renderer (TypeScript)
+│   ├── style.css              # App-specific styles
+│   ├── preload.ts             # Secure IPC bridge
+│   └── components/            # React components
+│       └── YourAppComponent.tsx
+├── your-app.main.ts           # Main process window controller
+└── your-app.ipc.ts            # IPC handlers (AppIpcModule)
 ```
 
-#### Real Example: Notes App Implementation
+**📋 Naming Conventions (Auto-Generated by AppGenerator):**
+- **Directory**: `kebab-case` (`notes`, `reminders`, `task-manager`)
+- **Classes**: `PascalCase` (`NotesWindow`, `RemindersApp`)
+- **IPC Modules**: `camelCase` + `PascalCase` (`notesIpcHandlers`, `RemindersIpcHandlers`)
+- **API Objects**: `camelCase` (`notesAPI`, `remindersAPI`)
 
-Here's how you would implement a Notes app that the Canvas Engine can open and manage:
+**🔧 AppGenerator Tool:**
+LaserFocus includes an `AppGenerator` utility that automatically creates apps with:
+- ✅ Consistent case conversion (PascalCase, camelCase, kebab-case)
+- ✅ Standardized file structure and boilerplate
+- ✅ Proper TypeScript types and IPC interfaces
+- ✅ Automatic Vite configuration integration
 
-**1. Create App Structure:**
-        ```bash
-mkdir src/apps/Notes
-```
+#### Real Example: Notes & Reminders Apps (Current Implementation)
 
-**2. Main Process Controller (`notes.main.ts`):**
+**✅ Live Examples:** The repository includes two fully implemented apps demonstrating the standardized pattern:
+
+**Notes App (`src/ui/apps/notes/`):**
 ```typescript
+// notes.main.ts - Main process window controller
 export class NotesWindow {
   public window: BrowserWindow;
-  private viteDevServerUrl: string | undefined;
-  private preloadPath: string;
-
+  
   constructor(primaryDisplay: Display, viteDevServerUrl: string | undefined, preloadPath: string) {
-    this.viteDevServerUrl = viteDevServerUrl;
-    this.preloadPath = preloadPath;
     this.window = new BrowserWindow({
-      width: 800,
-      height: 600,
-      title: 'Notes App',
+      width: 800, height: 600,
+      title: 'notes',  // Lowercase title
       webPreferences: {
-        preload: this.preloadPath,
+        preload: preloadPath,
         nodeIntegration: false,
         contextIsolation: true,
       },
@@ -352,61 +512,101 @@ export class NotesWindow {
 
   init(): void {
     if (this.viteDevServerUrl) {
-      // Development: Load from Vite dev server
-      this.window.loadURL(`${this.viteDevServerUrl}/src/apps/Notes/index.html`);
+      // Development: Load from Vite dev server  
+      this.window.loadURL(`${this.viteDevServerUrl}/src/ui/apps/notes/src/index.html`);
     } else {
       // Production: Load from built files
-      const rendererPath = path.join(app.getAppPath(), 'dist/apps/Notes/index.html');
-      this.window.loadFile(rendererPath);
+      this.window.loadFile('dist/apps/notes/index.html');
     }
+  }
+
+  focus(): void { this.window.focus(); }
+  close(): void { this.window.close(); }
+}
+```
+
+**Preload Bridge (`notes/src/preload.ts`):**
+```typescript
+import { contextBridge, ipcRenderer } from 'electron';
+
+interface notesAPI {
+  exampleAction: () => Promise<string>;
+  focusWindow: () => Promise<void>;
+}
+
+const notesAPI: notesAPI = {
+  exampleAction: () => ipcRenderer.invoke('notes:example-action'),
+  focusWindow: () => ipcRenderer.invoke('notes:focus'),
+};
+
+contextBridge.exposeInMainWorld('notesAPI', notesAPI);
+
+declare global {
+  interface Window {
+    notesAPI: notesAPI;
   }
 }
 ```
 
-**3. React App Entry (`index.html`):**
-```html
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Notes App</title>
-    <link rel="stylesheet" href="/src/apps/Notes/style.css">
-</head>
-<body>
-    <div id="notes-root"></div>
-    <script type="module" src="/src/apps/Notes/renderer.tsx"></script>
-</body>
-</html>
-```
-
-**4. React Renderer (`renderer.tsx`):**
+**IPC Handlers (`notes.ipc.ts`):**
 ```typescript
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import { NotesApp } from './components/NotesApp';
-
-const root = ReactDOM.createRoot(
-  document.getElementById('notes-root') as HTMLElement
-);
-
-root.render(<NotesApp />);
-```
-
-**5. IPC Module (`notes.ipc.ts`):**
-```typescript
-export const NotesIpcHandlers: AppIpcModule = {
+export const notesIpcHandlers: AppIpcModule = {
   moduleId: 'notes',
   registerMainProcessHandlers: (ipcMain, canvasEngine, appInstance) => {
-    ipcMain.on('notes:save-note', (event, noteData) => {
-      // Handle note saving logic
+    ipcMain.handle('notes:example-action', async () => {
+      return 'Example action completed';
     });
     
-    ipcMain.on('notes:load-notes', (event) => {
-      // Handle note loading logic
+    ipcMain.handle('notes:focus', async () => {
+      if (appInstance && 'focus' in appInstance) {
+        (appInstance as any).focus();
+      }
     });
   }
 };
 ```
+
+**React Component (`notes/src/components/NotesApp.tsx`):**
+```typescript
+import React, { useState } from 'react';
+
+export const NotesApp: React.FC = () => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<string | null>(null);
+
+  const handleExampleAction = async () => {
+    setLoading(true);
+    try {
+      const result = await window.notesAPI.exampleAction();
+      setData(result);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="notes-app">
+      <header className="notes-header">
+        <h1>notes</h1>
+        <button onClick={handleExampleAction} disabled={loading}>
+          {loading ? 'Loading...' : 'Example Action'}
+        </button>
+      </header>
+      <div className="notes-content">
+        {error && <div className="error">Error: {error}</div>}
+        {data && <div className="result">Result: {data}</div>}
+        {!error && !data && <div className="empty-state">Welcome to notes!</div>}
+      </div>
+    </div>
+  );
+};
+```
+
+**Reminders App** follows the identical pattern with `reminders` namespace instead of `notes`.
 
 #### Build System Integration
 
@@ -503,14 +703,22 @@ appModules.push(NotesIpcHandlers);
 
 This architecture enables you to build sophisticated desktop applications that seamlessly integrate with LaserFocus's AI-powered window management system.
 
-#### Future Canvas Engine Integration
+#### ✅ Canvas Engine Integration (Live)
 
-The Canvas Engine will soon support dynamic app opening through natural language commands. Users will be able to say:
+The Canvas Engine now supports dynamic app opening through natural language commands. Users can say:
 
-- **"open notes app"** → Canvas Engine opens the Notes app window
-- **"open calendar and place it next to notes"** → Opens Calendar app with intelligent positioning  
-- **"close all apps but keep notes"** → Selective app management
-- **"resize the notes app to take up the left half"** → Dynamic app window manipulation
+- **"open notes app"** → ✅ Canvas Engine opens the Notes app window
+- **"open reminders app"** → ✅ Canvas Engine opens the Reminders app window
+- **"open notes and reminders side by side"** → ✅ Opens both apps with intelligent positioning  
+- **"close the notes app"** → ✅ Selective app management
+- **"resize the notes app to take up the left half"** → ✅ Dynamic app window manipulation
+
+**Current Implementation:**
+- ✅ **App Discovery**: Automatic detection of `notes` and `reminders` apps
+- ✅ **Natural Language**: Full AI-driven app opening and management
+- ✅ **Layout Intelligence**: Apps integrate with window layout strategies
+- ✅ **IPC Integration**: Seamless communication between Canvas Engine and apps
+- ✅ **Conversation Monitoring**: AthenaWidget tracks all app-related operations
 
 This creates a unified ecosystem where web content and native apps coexist under intelligent AI management.
 
@@ -520,20 +728,72 @@ This creates a unified ecosystem where web content and native apps coexist under
 
 ```
 src/
-├── apps/                    # UI Components
-│   ├── InputPill/          # User input interface
-│   └── AthenaWidget/       # Conversation display
-├── core/                   # Core engine and services
-│   ├── bridge/             # IPC communication
-│   ├── config/             # Application configuration
-│   └── engine/             # Canvas Engine implementation
-│       ├── canvas-engine.ts # Main engine
-│       ├── engine.service.ts # Engine management
-│       ├── prompts/        # AI prompt templates
-│       └── tools/          # Tool schemas
-├── utils/                  # Shared utilities
-└── main.ts                 # Electron main process
+├── ui/                         # User Interface Layer
+│   ├── apps/                  # Built-in Applications
+│   │   ├── notes/             # Notes app (standardized structure)
+│   │   │   ├── src/           # Source files
+│   │   │   │   ├── index.html, renderer.tsx, style.css
+│   │   │   │   ├── preload.ts, components/
+│   │   │   ├── notes.main.ts  # Main process controller
+│   │   │   └── notes.ipc.ts   # IPC handlers
+│   │   └── reminders/         # Reminders app (identical pattern)
+│   ├── platform/              # Platform UI Components
+│   │   ├── AthenaWidget/      # Conversation display & monitoring
+│   │   └── InputPill/         # User input interface
+│   └── widgets/               # Future widget components
+├── core/                      # Core Engine & Services
+│   ├── app-discovery/         # UI Discovery Service
+│   ├── bridge/                # Enhanced IPC communication
+│   ├── config/                # Application configuration
+│   └── engine/                # Canvas Engine implementation
+│       ├── canvas-engine.ts   # Main engine with UI integration
+│       ├── engine.service.ts  # Engine management
+│       ├── prompts/           # AI prompt templates + UI components
+│       └── tools/             # Tool schemas with layout compliance
+├── lib/                       # Shared Libraries
+│   ├── types/                 # Type definitions (Canvas, UI, etc.)
+│   └── utils/                 # Shared utilities
+└── main.ts                    # Electron main process with discovery
 ```
+
+**🔄 Key Architecture Changes:**
+- **UI Discovery Service**: Automatically discovers and registers apps
+- **Standardized App Structure**: All apps follow consistent patterns
+- **Enhanced Canvas Engine**: Integrated UI component management
+- **Platform Component Tracking**: Real-time monitoring of UI components
+- **Type-Safe IPC**: Comprehensive TypeScript coverage for all communications
+
+### UI Discovery Service (`src/core/app-discovery/`)
+
+**Automatic App Detection:**
+The UI Discovery Service automatically scans for and registers available applications:
+
+```typescript
+interface UIDiscoveryConfig {
+  canvasEngine: CanvasEngine;
+  viteDevServerUrl?: string;
+  preloadBasePath: string;
+}
+
+// Discovered apps are automatically registered
+const discoveredApps = getDiscoveredApps(); // ['notes', 'reminders']
+const appPaths = getAppPath(appName); // Returns standardized paths
+
+// Canvas Engine integration
+await uiDiscoveryService.setupUIComponents();
+```
+
+**Platform Component Management:**
+- **InputPill**: Registered as user input component
+- **AthenaWidget**: Registered as conversation monitor
+- **Auto-Registration**: New apps are automatically discovered and registered
+- **Lifecycle Management**: Apps are initialized through Canvas Engine coordination
+
+**Benefits:**
+- ✅ **Zero Configuration**: New apps are automatically detected
+- ✅ **Consistent Patterns**: All apps follow the same structure
+- ✅ **Type Safety**: Full TypeScript integration throughout
+- ✅ **Hot Reload**: Development changes are automatically picked up
 
 ### Development Workflow
 
@@ -802,3 +1062,4 @@ private resizeAndMoveWindow(args: z.infer<typeof resizeAndMoveWindowSchema>) {
 - **Google AI**: For Gemini language model integration
 - **Electron**: For cross-platform desktop application framework
 - **Vite**: For fast development experience
+

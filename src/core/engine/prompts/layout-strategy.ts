@@ -1,12 +1,28 @@
-export const layoutStrategyPrompt = `# Advanced Window Layout Strategy
+export const layoutStrategyPrompt = `# 🚨 CRITICAL WINDOW LAYOUT STRATEGY - MANDATORY COMPLIANCE
+
+## ⚠️ BEFORE ANY WINDOW OPERATION - READ THIS FIRST:
+1. **NEVER place windows at the same coordinates unless explicitly replacing them**
+2. **ALWAYS resize existing windows before opening new ones when going from 1→2 or 2→3 windows**
+3. **COUNT THE USER WINDOWS: {{userWindowCount}} - this determines your required layout pattern**
+4. **If {{userWindowCount}} = 1 and you're opening a second window, YOU MUST use side-by-side layout**
+5. **If {{userWindowCount}} = 2 and you're opening a third window, YOU MUST rearrange all windows**
 
 ## Screen Information
 - Screen Resolution: {{screenWidth}}x{{screenHeight}} pixels
 - Coordinate System: Top-left corner is (0,0)
 - Available Work Area: Excludes system UI elements
 
-## UI Component Boundaries (DO NOT OVERLAP)
+## Platform UI Components (FIXED - DO NOT MOVE OR RESIZE)
+These are system-level UI components that are part of the LaserFocus interface itself:
 {{uiComponents}}
+
+**IMPORTANT**: These are NOT user content windows. They are platform components that provide the application interface (AthenaWidget for AI chat, InputPill for user input). Do NOT count them when planning layouts or describing window arrangements.
+
+## User Content Windows (MANAGEABLE)
+These are the browser windows containing user-requested content that you can open, close, resize, and move:
+{{userWindows}}
+
+**Current User Window Count**: {{userWindowCount}} browser windows
 
 ## Layout Parameters
 - Default window starting X: {{defaultX}}
@@ -18,6 +34,9 @@ export const layoutStrategyPrompt = `# Advanced Window Layout Strategy
 
 ## Current Canvas State
 {{canvasState}}
+
+## UI Component Ecosystem
+{{uiComponents}}
 
 ## 🚨 CRITICAL: Complete Action Sequences
 **NEVER STOP UNTIL ALL STEPS ARE DONE!**
@@ -31,11 +50,20 @@ export const layoutStrategyPrompt = `# Advanced Window Layout Strategy
 
 ### Phase 1: Analyze Current State
 Before any action, analyze:
-1. How many windows are currently open?
+1. How many USER CONTENT windows are currently open? ({{userWindowCount}})
 2. What are their current positions and sizes?
 3. What type of layout will best serve the user?
 
-### Phase 2: Choose Optimal Layout Pattern
+**Remember**: Only count browser windows in {{userWindows}} for layout decisions. Platform components are fixed UI elements.
+
+### Phase 2: Choose Optimal Layout Pattern - DECISION TREE
+
+🚨 **MANDATORY DECISION LOGIC - CHECK {{userWindowCount}}:**
+
+**IF {{userWindowCount}} = 0**: Use Pattern 1 (Single Window)
+**IF {{userWindowCount}} = 1**: USE PATTERN 2 (SIDE-BY-SIDE) - NO EXCEPTIONS!
+**IF {{userWindowCount}} = 2**: Use Pattern 3 (Top/Bottom Split)  
+**IF {{userWindowCount}} ≥ 3**: Use Pattern 4 or 5 (Grid)
 
 #### 🔹 Pattern 1: Single Window (0 → 1 windows)
 **When**: First window opening
@@ -43,11 +71,18 @@ Before any action, analyze:
 - Position: x={{defaultX}}, y={{defaultY}}
 - Size: {{maxUsableWidth}}px × {{defaultHeight}}px
 
-#### 🔹 Pattern 2: Side-by-Side (1 → 2 windows)  
-**When**: Adding second window
-**Layout**: Horizontal split
+#### 🔹 Pattern 2: Side-by-Side (1 → 2 windows) ⚠️ MANDATORY WHEN GOING FROM 1→2 WINDOWS
+**When**: Adding second window (CRITICAL: When {{userWindowCount}} = 1)
+**Layout**: Horizontal split - **YOU MUST EXECUTE BOTH STEPS!**
+
+🚨 **ABSOLUTE REQUIREMENT**: When opening a second window, you MUST:
 - **Step 1**: Resize existing window: x={{defaultX}}, y={{defaultY}}, width=530px, height={{defaultHeight}}px
 - **Step 2**: Open new window: x=550, y={{defaultY}}, width=530px, height={{defaultHeight}}px
+
+**NEVER OPEN A SECOND WINDOW AT THE SAME COORDINATES AS THE FIRST!**
+**NEVER USE x={{defaultX}} FOR THE SECOND WINDOW - USE x=550!**
+
+🚨 **ENFORCEMENT**: If you open a second window without first resizing the existing window, you will have FAILED to follow instructions. The user EXPECTS both windows to be side-by-side, not overlapping. ALWAYS resize first, then open second.
 
 #### 🔹 Pattern 3: Top/Bottom Split (2 → 3 windows) ⭐ RECOMMENDED
 **When**: Adding third window
@@ -98,6 +133,18 @@ Visual Layout (Top/Bottom Split):
 - ✅ Screen real estate allows comfortable grid sizing
 
 ## Execution Templates
+
+### 🎯 Template: Adding Second Window (Side-by-Side)
+\`\`\`
+Current: 1 window at full width (1070px)
+Goal: 2 windows side-by-side at 530px each
+
+MANDATORY Action Sequence (BOTH REQUIRED):
+1. resize_and_move_window: {"windowId": "app-X", "x": {{defaultX}}, "y": {{defaultY}}, "width": 530, "height": {{defaultHeight}}}
+2. open_browser_window: {"url": "USER_URL", "x": 550, "y": {{defaultY}}, "width": 530, "height": {{defaultHeight}}}
+
+🚨 CRITICAL: You CANNOT skip step 1! Gemini must resize the existing window first!
+\`\`\`
 
 ### 🎯 Template: Adding Third Window (Top/Bottom Split)
 \`\`\`

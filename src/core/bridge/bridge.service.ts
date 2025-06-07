@@ -33,12 +33,32 @@ export const initializeBridge = (
             if (appInstance) {
                 try {
                     logger.info(`[BridgeService] Registering IPC handlers for module: ${module.moduleId}`);
-                    module.registerMainProcessHandlers(
-                        ipcMain, // Pass Electron's ipcMain
-                        canvasEngine,
-                        appInstance,
-                        appInstances // Pass all instances for potential cross-app communication
-                    );
+                    
+                    // Special handling for AthenaWidget as conversation monitor
+                    if (module.moduleId === 'AthenaWidget') {
+                        const athenaModule = module as any;
+                        if (athenaModule.registerHandlers && typeof athenaModule.registerHandlers === 'function') {
+                            // AthenaWidget is now agnostic - no Canvas Engine dependency
+                            athenaModule.registerHandlers(appInstance.window);
+                        } else {
+                            // Fallback to old method
+                            module.registerMainProcessHandlers(
+                                ipcMain,
+                                canvasEngine,
+                                appInstance,
+                                appInstances
+                            );
+                        }
+                    } else {
+                        // Standard registration for other modules
+                        module.registerMainProcessHandlers(
+                            ipcMain,
+                            canvasEngine,
+                            appInstance,
+                            appInstances
+                        );
+                    }
+                    
                     logger.info(`[BridgeService] IPC handlers for module: ${module.moduleId} registered successfully.`);
                 } catch (e) {
                     logger.error(`[BridgeService] Failed to register IPC handlers for module: ${module.moduleId}`, e);
@@ -57,33 +77,61 @@ export const initializeBridge = (
 };
 
 /**
+ * Checks if a response content is empty or meaningless
+ */
+function isEmptyResponse(content: string): boolean {
+    if (!content || content.trim().length === 0) {
+        return true;
+    }
+    
+    // Check for empty text structures like [{"type":"text","text":""}]
+    try {
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+            return parsed.every(item => 
+                item.type === 'text' && (!item.text || item.text.trim().length === 0)
+            );
+        }
+    } catch {
+        // Not JSON, continue with string checks
+    }
+    
+    // Check for other empty patterns
+    const meaninglessPatterns = [
+        /^\s*$/, // Only whitespace
+        /^task completed\.?\s*$/i, // Generic completion without detail
+        /^done\.?\s*$/i, // Just "done"
+    ];
+    
+    return meaninglessPatterns.some(pattern => pattern.test(content.trim()));
+}
+
+/**
  * Registers the modern 'run-agent' handler for Canvas Engine
  */
 function registerModernAgentHandler(
     canvasEngine: CanvasEngine, 
     appInstances: AppMainProcessInstances
 ): void {
-    // Pragmatic: import at the top to avoid dynamic require issues
-    const ATHENA_WIDGET_IPC_EVENTS = {
-        USER_QUERY: 'ipc-main-event:athena-widget:user-query',
-        AGENT_RESPONSE: 'ipc-main-event:athena-widget:agent-response',
-        AGENT_ERROR: 'ipc-main-event:athena-widget:agent-error',
-    };
-    
     ipcMain.on('run-agent', async (event, query: string) => {
         logger.info(`[BridgeService] Modern run-agent handler received query: "${query}"`);
         
         const athenaWidgetInstance = appInstances.get('AthenaWidget');
         
         try {
-            // Emit user query to AthenaWidget
-            if (athenaWidgetInstance) {
-                logger.info(`[BridgeService] Emitting user query to AthenaWidget`);
-                ipcMain.emit(ATHENA_WIDGET_IPC_EVENTS.USER_QUERY, query);
+            // Send user query to AthenaWidget for monitoring
+            if (athenaWidgetInstance && athenaWidgetInstance.window && !athenaWidgetInstance.window.isDestroyed()) {
+                athenaWidgetInstance.window.webContents.send('conversation-update', {
+                    type: 'user',
+                    content: query,
+                    timestamp: new Date().toISOString()
+                });
             }
             
-            // Send processing notification to InputPill
-            event.sender.send('agent-processing');
+            // Send processing notification to InputPill (only if event has valid sender)
+            if (event.sender && !event.sender.isDestroyed()) {
+                event.sender.send('agent-processing');
+            }
             
             // Use Canvas Engine's invoke method
             const result = await canvasEngine.invoke(query);
@@ -108,20 +156,43 @@ function registerModernAgentHandler(
                     responseContent = JSON.stringify(result);
                 }
             }
+
+            // Mark empty responses so frontend can handle them gracefully
+            if (isEmptyResponse(responseContent)) {
+                responseContent = "__EMPTY_RESPONSE__"; // Special marker for frontend
+                logger.info('[BridgeService] Marking empty response for frontend handling');
+            }
             
-            // Send response back to requester and AthenaWidget
-            event.sender.send('agent-response', responseContent);
-            if (athenaWidgetInstance) {
-                ipcMain.emit(ATHENA_WIDGET_IPC_EVENTS.AGENT_RESPONSE, responseContent);
+            // Send response back to requester (InputPill) only if event has valid sender
+            if (event.sender && !event.sender.isDestroyed()) {
+                event.sender.send('agent-response', responseContent);
+            }
+            
+            // Send agent response to AthenaWidget for monitoring
+            if (athenaWidgetInstance && athenaWidgetInstance.window && !athenaWidgetInstance.window.isDestroyed()) {
+                athenaWidgetInstance.window.webContents.send('conversation-update', {
+                    type: 'agent',
+                    content: responseContent,
+                    timestamp: new Date().toISOString()
+                });
             }
             
         } catch (error: any) {
             logger.error('[BridgeService] Error in modern run-agent handler:', error);
             const errorMessage = `Error: ${error.message}`;
             
-            event.sender.send('agent-response', errorMessage);
-            if (athenaWidgetInstance) {
-                ipcMain.emit(ATHENA_WIDGET_IPC_EVENTS.AGENT_ERROR, errorMessage);
+            // Send error response back to requester (InputPill) only if event has valid sender
+            if (event.sender && !event.sender.isDestroyed()) {
+                event.sender.send('agent-response', errorMessage);
+            }
+            
+            // Send error to AthenaWidget for monitoring
+            if (athenaWidgetInstance && athenaWidgetInstance.window && !athenaWidgetInstance.window.isDestroyed()) {
+                athenaWidgetInstance.window.webContents.send('conversation-update', {
+                    type: 'agent',
+                    content: errorMessage,
+                    timestamp: new Date().toISOString()
+                });
             }
         }
     });
