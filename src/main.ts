@@ -29,7 +29,7 @@ const initializeApp = async (): Promise<void> => {
     
     // Initialize Core Engine first (without platform windows)
     try {
-        canvasEngineInstance = initializeCanvasEngineAuto();
+        canvasEngineInstance = await initializeCanvasEngineAuto();
         logger.info(`[initializeApp] Canvas Engine initialized successfully.`);
     } catch (error) {
         logger.error(`[initializeApp] Critical error during CanvasEngine initialization: ${error instanceof Error ? error.message : String(error)}. Application will exit.`);
