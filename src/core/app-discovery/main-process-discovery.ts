@@ -174,8 +174,8 @@ export class UIDiscoveryService {
             const registryModule = require('./app-registry');
             return registryModule.getAppType(appName);
         } catch (error) {
-            // Fallback for known platform UI components
-            const platformUIComponents = ['InputPill', 'AthenaWidget'];
+            // Fallback for known platform UI components - using PascalCase to match registry
+            const platformUIComponents = ['InputPill', 'AthenaWidget', 'Byokwidget'];
             return platformUIComponents.includes(appName) ? 'platform-ui-component' : 'application';
         }
     }

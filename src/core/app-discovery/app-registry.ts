@@ -1,12 +1,14 @@
 // Auto-generated file - do not edit manually
 // This file is regenerated whenever the development server starts
 
-import * as AthenawidgetMain from '@ui/platform/AthenaWidget/athenawidget.main';
-import * as AthenawidgetIpc from '@ui/platform/AthenaWidget/athenawidget.ipc';
-import * as InputpillMain from '@ui/platform/InputPill/inputpill.main';
-import * as InputpillIpc from '@ui/platform/InputPill/inputpill.ipc';
-import * as NotesMain from '@ui/apps/Notes/notes.main';
-import * as NotesIpc from '@ui/apps/Notes/notes.ipc';
+import * as AthenaWidgetMain from '@ui/platform/AthenaWidget/athenawidget.main';
+import * as AthenaWidgetIpc from '@ui/platform/AthenaWidget/athenawidget.ipc';
+import * as InputPillMain from '@ui/platform/InputPill/inputpill.main';
+import * as InputPillIpc from '@ui/platform/InputPill/inputpill.ipc';
+import * as ByokwidgetMain from '@ui/platform/byokwidget/byokwidget.main';
+import * as ByokwidgetIpc from '@ui/platform/byokwidget/byokwidget.ipc';
+import * as NotesMain from '@ui/apps/notes/notes.main';
+import * as NotesIpc from '@ui/apps/notes/notes.ipc';
 import * as RemindersMain from '@ui/apps/reminders/reminders.main';
 import * as RemindersIpc from '@ui/apps/reminders/reminders.ipc';
 
@@ -21,18 +23,26 @@ export function createAppRegistry(): AppRegistry {
         ipcModules: new Map(),
     };
 
-    if (AthenawidgetMain) {
-         for (const [key, value] of Object.entries(AthenawidgetMain)) {
-             if (typeof value === 'function' && (key.includes('Window') || key.includes('Athenawidget'))) {
+    if (AthenaWidgetMain) {
+         for (const [key, value] of Object.entries(AthenaWidgetMain)) {
+             if (typeof value === 'function' && (key.includes('Window') || key.includes('AthenaWidget'))) {
                  registry.mainClasses.set('AthenaWidget', value);
                 break;
             }
         }
     }
-    if (InputpillMain) {
-         for (const [key, value] of Object.entries(InputpillMain)) {
-             if (typeof value === 'function' && (key.includes('Window') || key.includes('Inputpill'))) {
+    if (InputPillMain) {
+         for (const [key, value] of Object.entries(InputPillMain)) {
+             if (typeof value === 'function' && (key.includes('Window') || key.includes('InputPill'))) {
                  registry.mainClasses.set('InputPill', value);
+                break;
+            }
+        }
+    }
+    if (ByokwidgetMain) {
+         for (const [key, value] of Object.entries(ByokwidgetMain)) {
+             if (typeof value === 'function' && (key.includes('Window') || key.includes('Byokwidget'))) {
+                 registry.mainClasses.set('Byokwidget', value);
                 break;
             }
         }
@@ -48,33 +58,36 @@ export function createAppRegistry(): AppRegistry {
     if (RemindersMain) {
          for (const [key, value] of Object.entries(RemindersMain)) {
              if (typeof value === 'function' && (key.includes('Window') || key.includes('Reminders'))) {
-                 registry.mainClasses.set('reminders', value);
+                 registry.mainClasses.set('Reminders', value);
                 break;
             }
         }
     }
-    if (AthenawidgetIpc.default) {
-         registry.ipcModules.set('AthenaWidget', AthenawidgetIpc.default);
+    if (AthenaWidgetIpc.default) {
+         registry.ipcModules.set('AthenaWidget', AthenaWidgetIpc.default);
     }
-    if (InputpillIpc.default) {
-         registry.ipcModules.set('InputPill', InputpillIpc.default);
+    if (InputPillIpc.default) {
+         registry.ipcModules.set('InputPill', InputPillIpc.default);
+    }
+    if (ByokwidgetIpc.default) {
+         registry.ipcModules.set('Byokwidget', ByokwidgetIpc.default);
     }
     if (NotesIpc.default) {
          registry.ipcModules.set('Notes', NotesIpc.default);
     }
     if (RemindersIpc.default) {
-         registry.ipcModules.set('reminders', RemindersIpc.default);
+         registry.ipcModules.set('Reminders', RemindersIpc.default);
     }
 
     return registry;
 }
 
 export function getDiscoveredApps(): string[] {
-    return ['AthenaWidget', 'InputPill', 'Notes', 'reminders'];
+    return ['AthenaWidget', 'InputPill', 'Byokwidget', 'Notes', 'Reminders'];
 }
 
 export function getAppType(appName: string): 'platform-ui-component' | 'application' | 'widget' {
-    const platformUIComponents = ['AthenaWidget', 'InputPill'];
+    const platformUIComponents = ['AthenaWidget', 'InputPill', 'Byokwidget'];
     const widgets = [];
     
     if (platformUIComponents.includes(appName)) return 'platform-ui-component';
@@ -86,8 +99,9 @@ export function getAppPath(appName: string): string {
     const appPaths: Record<string, string> = {
         'AthenaWidget': 'platform/AthenaWidget',
         'InputPill': 'platform/InputPill',
-        'Notes': 'apps/Notes',
-        'reminders': 'apps/reminders'
+        'Byokwidget': 'platform/byokwidget',
+        'Notes': 'apps/notes',
+        'Reminders': 'apps/reminders'
     };
     return appPaths[appName] || `apps/${appName}`;
 }

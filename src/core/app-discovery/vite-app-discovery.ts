@@ -137,8 +137,14 @@ function findPreloadFile(appPath: string): string | undefined {
 
 /**
  * Helper function to convert kebab-case to PascalCase for valid JS identifiers
+ * Also preserves existing PascalCase names
  */
 function toPascalCase(str: string): string {
+    // If the string is already in PascalCase (starts with uppercase and has no separators), return as-is
+    if (/^[A-Z][a-zA-Z0-9]*$/.test(str)) {
+        return str;
+    }
+    
     return str
         .split(/[-_\s]+/)
         .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
@@ -165,7 +171,7 @@ export function generateAppRegistry(apps: DiscoveredApp[], outputPath: string): 
             mainClassEntries.push(`    if (${mainImportName}) {
          for (const [key, value] of Object.entries(${mainImportName})) {
              if (typeof value === 'function' && (key.includes('Window') || key.includes('${safeName}'))) {
-                 registry.mainClasses.set('${name}', value);
+                 registry.mainClasses.set('${safeName}', value);
                 break;
             }
         }
@@ -177,11 +183,11 @@ export function generateAppRegistry(apps: DiscoveredApp[], outputPath: string): 
             imports.push(`import * as ${ipcImportName} from '@ui/${fullPath}/${ipcFile.replace(/\.(ts|js)$/, '')}';`);
             
             ipcModuleEntries.push(`    if (${ipcImportName}.default) {
-         registry.ipcModules.set('${name}', ${ipcImportName}.default);
+         registry.ipcModules.set('${safeName}', ${ipcImportName}.default);
     }`);
         }
         
-        appNames.push(`'${name}'`);
+        appNames.push(`'${safeName}'`);
     });
     
     const registryContent = `// Auto-generated file - do not edit manually
@@ -211,8 +217,8 @@ export function getDiscoveredApps(): string[] {
 }
 
 export function getAppType(appName: string): 'platform-ui-component' | 'application' | 'widget' {
-    const platformUIComponents = [${apps.filter(a => a.type === 'platform-ui-component').map(a => `'${a.name}'`).join(', ')}];
-    const widgets = [${apps.filter(a => a.type === 'widget').map(a => `'${a.name}'`).join(', ')}];
+    const platformUIComponents = [${apps.filter(a => a.type === 'platform-ui-component').map(a => `'${toPascalCase(a.name)}'`).join(', ')}];
+    const widgets = [${apps.filter(a => a.type === 'widget').map(a => `'${toPascalCase(a.name)}'`).join(', ')}];
     
     if (platformUIComponents.includes(appName)) return 'platform-ui-component';
     if (widgets.includes(appName)) return 'widget';
@@ -221,7 +227,7 @@ export function getAppType(appName: string): 'platform-ui-component' | 'applicat
 
 export function getAppPath(appName: string): string {
     const appPaths: Record<string, string> = {
-${apps.map(app => `        '${app.name}': '${app.fullPath}'`).join(',\n')}
+${apps.map(app => `        '${toPascalCase(app.name)}': '${app.fullPath}'`).join(',\n')}
     };
     return appPaths[appName] || \`apps/\${appName}\`;
 }
