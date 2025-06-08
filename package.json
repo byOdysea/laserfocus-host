@@ -1,6 +1,6 @@
 {
   "name": "laserfocus",
-  "version": "0.0.3",
+  "version": "0.0.4-alpha.0",
   "description": "canvas engine mvp",
   "main": "dist/main/main.js",
   "scripts": {
@@ -9,10 +9,11 @@
     "start": "yarn build && electron . --enable-logging --inspect",
     "dev": "vite",
     "package-mac": "electron-builder --mac",
+    "build-alpha": "npm version prerelease --preid=alpha --no-git-tag-version && yarn build && yarn package-mac && git checkout package.json",
     "create-app": "tsx src/core/app-discovery/app-generator.ts"
   },
   "repository": "https://github.com/byOdysea/laserfocus.git",
-  "author": "Andres Antillon <axantillon@gmail.com>, ",
+  "author": "Andres Antillon <axantillon@gmail.com>ail.com>",
   "license": "MIT",
   "productName": "Laserfocus",
   "devDependencies": {
