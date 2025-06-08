@@ -75,7 +75,7 @@ import { z } from 'zod';
  * and provider-agnostic. Only the parameter handling workarounds need removal.
  */
 export class CanvasEngine {
-    private readonly llmConfig: LLMConfig;
+    private llmConfig: LLMConfig;
     private readonly workArea: Rectangle;
     private readonly tools: StructuredTool[];
     private readonly graph: any;
@@ -116,25 +116,34 @@ export class CanvasEngine {
         this.workArea = screen.getPrimaryDisplay().workArea; 
         
         // Store config for future provider abstraction
-        const resolvedApiKey = apiKey || process.env.GOOGLE_API_KEY || "AIzaSyCCQcQH3xse-L9E5grN3JKTDNqEd6pzjNo";
+        const resolvedApiKey = apiKey || process.env.GOOGLE_API_KEY;
+        
+        // Initialize with placeholder config if no API key is provided
         if (!resolvedApiKey) {
-            throw new Error("GOOGLE_API_KEY is required");
+            logger.warn('[CanvasEngine] No API key provided - engine initialized in limited mode. Some features may not work until API key is set.');
+            this.llmConfig = {
+                provider: 'google',
+                apiKey: '', // Empty until set later
+                modelName,
+                temperature: 0.2,
+                maxTokens: 2048
+            };
+        } else {
+            // Basic API key validation
+            if (!resolvedApiKey.startsWith('AIza')) {
+                logger.warn('[CanvasEngine] API key does not look like a valid Google AI key (should start with AIza)');
+            }
+            
+            logger.info(`[CanvasEngine] Using API key: ${resolvedApiKey.substring(0, 8)}...${resolvedApiKey.substring(resolvedApiKey.length - 4)}`);
+            
+            this.llmConfig = {
+                provider: 'google',
+                apiKey: resolvedApiKey,
+                modelName,
+                temperature: 0.2,
+                maxTokens: 2048
+            };
         }
-        
-        // Basic API key validation
-        if (!resolvedApiKey.startsWith('AIza')) {
-            logger.warn('[CanvasEngine] API key does not look like a valid Google AI key (should start with AIza)');
-        }
-        
-        logger.info(`[CanvasEngine] Using API key: ${resolvedApiKey.substring(0, 8)}...${resolvedApiKey.substring(resolvedApiKey.length - 4)}`);
-        
-        this.llmConfig = {
-            provider: 'google',
-            apiKey: resolvedApiKey,
-            modelName,
-            temperature: 0.2,
-            maxTokens: 2048
-        };
         
         this.setupUIComponents(inputPillWindow, athenaWidgetWindow);
         this.tools = this.createTools(externalTools);
@@ -403,6 +412,15 @@ export class CanvasEngine {
         };
 
         const callAgent = async (state: typeof MessagesAnnotation.State) => {
+            // Check if API key is available
+            if (!this.hasValidApiKey()) {
+                logger.warn('[CanvasEngine] No valid API key available - returning error message');
+                const errorMessage = new AIMessage({
+                    content: `⚠️ No API key configured. Please set up your API key using the key helper widget to enable AI features.`
+                });
+                return { messages: [errorMessage] };
+            }
+
             const systemPrompt = this.buildSystemPrompt();
             const messages = [new SystemMessage(systemPrompt), ...state.messages];
             
@@ -1088,6 +1106,36 @@ export class CanvasEngine {
         // For now, just create a new thread ID
         (this as any).threadId = `canvas-session-${Date.now()}`;
         logger.info('[CanvasEngine] Conversation history cleared - new thread started');
+    }
+
+    /**
+     * Update the API key after initialization
+     */
+    updateApiKey(apiKey: string): boolean {
+        if (!apiKey || apiKey.trim().length === 0) {
+            logger.error('[CanvasEngine] Cannot update with empty API key');
+            return false;
+        }
+
+        const trimmedKey = apiKey.trim();
+        
+        // Basic API key validation
+        if (!trimmedKey.startsWith('AIza')) {
+            logger.warn('[CanvasEngine] API key does not look like a valid Google AI key (should start with AIza)');
+        }
+        
+        // Update the LLM config
+        this.llmConfig.apiKey = trimmedKey;
+        
+        logger.info(`[CanvasEngine] API key updated successfully: ${trimmedKey.substring(0, 8)}...${trimmedKey.substring(trimmedKey.length - 4)}`);
+        return true;
+    }
+
+    /**
+     * Check if the engine has a valid API key
+     */
+    hasValidApiKey(): boolean {
+        return !!(this.llmConfig.apiKey && this.llmConfig.apiKey.length > 0);
     }
 
     /**
