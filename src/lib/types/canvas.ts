@@ -25,11 +25,12 @@ export interface LayoutConfig {
 }
 
 export interface LLMConfig {
-    provider: 'google' | 'openai' | 'anthropic';
+    provider: 'google' | 'openai' | 'anthropic' | 'custom';
     apiKey: string;
     modelName: string;
     temperature?: number;
     maxTokens?: number;
+    baseUrl?: string; // For custom providers
 }
 
 export interface PlatformComponentConfig {

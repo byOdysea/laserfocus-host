@@ -1,4 +1,4 @@
-import { APP_NAME, IS_DEV, VITE_DEV_SERVER_URL } from '@core/config/app-config';
+import { APP_NAME, IS_DEV, VITE_DEV_SERVER_URL } from '@core/config/config';
 import { CanvasEngine } from '@core/engine/canvas-engine';
 import * as logger from '@utils/logger';
 import 'dotenv/config'; // Ensure this is at the very top
@@ -27,14 +27,18 @@ const initializeApp = async (): Promise<void> => {
 
     const primaryDisplay: Display = screen.getPrimaryDisplay();
     
-    // Initialize Core Engine first (without platform windows)
+    // Initialize Core Engine first (now with graceful degradation)
     try {
         canvasEngineInstance = await initializeCanvasEngineAuto();
         logger.info(`[initializeApp] Canvas Engine initialized successfully.`);
     } catch (error) {
-        logger.error(`[initializeApp] Critical error during CanvasEngine initialization: ${error instanceof Error ? error.message : String(error)}. Application will exit.`);
-        app.quit();
-        return;
+        logger.warn(`[initializeApp] Canvas Engine initialization completed with warnings: ${error instanceof Error ? error.message : String(error)}. Continuing with limited functionality.`);
+        // Don't quit - the engine can start in limited mode
+        if (!canvasEngineInstance) {
+            logger.error(`[initializeApp] No engine instance available. This should not happen with graceful initialization.`);
+            app.quit();
+            return;
+        }
     }
 
     // Initialize UI Discovery Service with Canvas Engine
