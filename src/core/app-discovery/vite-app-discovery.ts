@@ -136,6 +136,16 @@ function findPreloadFile(appPath: string): string | undefined {
 }
 
 /**
+ * Helper function to convert kebab-case to PascalCase for valid JS identifiers
+ */
+function toPascalCase(str: string): string {
+    return str
+        .split(/[-_\s]+/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join('');
+}
+
+/**
  * Generates the app registry file
  */
 export function generateAppRegistry(apps: DiscoveredApp[], outputPath: string): void {
@@ -146,14 +156,15 @@ export function generateAppRegistry(apps: DiscoveredApp[], outputPath: string): 
     
     apps.forEach(app => {
         const { name, fullPath, mainFile, ipcFile } = app;
+        const safeName = toPascalCase(name); // Convert to valid JS identifier
         
-                 if (mainFile) {
-             const mainImportName = `${name}Main`;
-             imports.push(`import * as ${mainImportName} from '@ui/${fullPath}/${mainFile.replace(/\.(ts|js)$/, '')}';`);
+        if (mainFile) {
+            const mainImportName = `${safeName}Main`;
+            imports.push(`import * as ${mainImportName} from '@ui/${fullPath}/${mainFile.replace(/\.(ts|js)$/, '')}';`);
             
-             mainClassEntries.push(`    if (${mainImportName}) {
+            mainClassEntries.push(`    if (${mainImportName}) {
          for (const [key, value] of Object.entries(${mainImportName})) {
-             if (typeof value === 'function' && (key.includes('Window') || key.includes('${name}'))) {
+             if (typeof value === 'function' && (key.includes('Window') || key.includes('${safeName}'))) {
                  registry.mainClasses.set('${name}', value);
                 break;
             }
@@ -161,11 +172,11 @@ export function generateAppRegistry(apps: DiscoveredApp[], outputPath: string): 
     }`);
         }
 
-         if (ipcFile) {
-             const ipcImportName = `${name}Ipc`;
-             imports.push(`import * as ${ipcImportName} from '@ui/${fullPath}/${ipcFile.replace(/\.(ts|js)$/, '')}';`);
+        if (ipcFile) {
+            const ipcImportName = `${safeName}Ipc`;
+            imports.push(`import * as ${ipcImportName} from '@ui/${fullPath}/${ipcFile.replace(/\.(ts|js)$/, '')}';`);
             
-             ipcModuleEntries.push(`    if (${ipcImportName}.default) {
+            ipcModuleEntries.push(`    if (${ipcImportName}.default) {
          registry.ipcModules.set('${name}', ${ipcImportName}.default);
     }`);
         }

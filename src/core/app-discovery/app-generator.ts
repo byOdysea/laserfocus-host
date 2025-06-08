@@ -260,11 +260,12 @@ export default ${handlerName};`;
 
     private async generatePreload(): Promise<void> {
         const { appName, appDir } = this.parsedAppInfo;
-        const apiName = `${appName.toLowerCase()}API`;
+        const apiName = `${this.toCamelCase(appName)}API`;
+        const interfaceName = `${this.toPascalCase(appName)}API`;
         
         const content = `import { contextBridge, ipcRenderer } from 'electron';
 
-export interface ${appName}API {
+export interface ${interfaceName} {
     exampleAction: (data: any) => Promise<{ success: boolean; result?: any; error?: string }>;
     focusWindow: () => void;
 }
@@ -274,12 +275,12 @@ export interface ${appName}API {
 contextBridge.exposeInMainWorld('${apiName}', {
     exampleAction: (data: any) => ipcRenderer.invoke('${appName.toLowerCase()}:example-action', data),
     focusWindow: () => ipcRenderer.send('${appName.toLowerCase()}:focus'),
-} as ${appName}API);
+} as ${interfaceName});
 
 // Also expose to global window type for TypeScript
 declare global {
     interface Window {
-        ${apiName}: ${appName}API;
+        ${apiName}: ${interfaceName};
     }
 }`;
 

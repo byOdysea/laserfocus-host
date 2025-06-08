@@ -1,14 +1,14 @@
 // Auto-generated file - do not edit manually
 // This file is regenerated whenever the development server starts
 
-import * as AthenaWidgetMain from '@ui/platform/AthenaWidget/athenawidget.main';
-import * as AthenaWidgetIpc from '@ui/platform/AthenaWidget/athenawidget.ipc';
-import * as InputPillMain from '@ui/platform/InputPill/inputpill.main';
-import * as InputPillIpc from '@ui/platform/InputPill/inputpill.ipc';
-import * as notesMain from '@ui/apps/notes/notes.main';
-import * as notesIpc from '@ui/apps/notes/notes.ipc';
-import * as remindersMain from '@ui/apps/reminders/reminders.main';
-import * as remindersIpc from '@ui/apps/reminders/reminders.ipc';
+import * as AthenawidgetMain from '@ui/platform/AthenaWidget/athenawidget.main';
+import * as AthenawidgetIpc from '@ui/platform/AthenaWidget/athenawidget.ipc';
+import * as InputpillMain from '@ui/platform/InputPill/inputpill.main';
+import * as InputpillIpc from '@ui/platform/InputPill/inputpill.ipc';
+import * as NotesMain from '@ui/apps/Notes/notes.main';
+import * as NotesIpc from '@ui/apps/Notes/notes.ipc';
+import * as RemindersMain from '@ui/apps/reminders/reminders.main';
+import * as RemindersIpc from '@ui/apps/reminders/reminders.ipc';
 
 export interface AppRegistry {
     mainClasses: Map<string, any>;
@@ -21,56 +21,56 @@ export function createAppRegistry(): AppRegistry {
         ipcModules: new Map(),
     };
 
-    if (AthenaWidgetMain) {
-         for (const [key, value] of Object.entries(AthenaWidgetMain)) {
-             if (typeof value === 'function' && (key.includes('Window') || key.includes('AthenaWidget'))) {
+    if (AthenawidgetMain) {
+         for (const [key, value] of Object.entries(AthenawidgetMain)) {
+             if (typeof value === 'function' && (key.includes('Window') || key.includes('Athenawidget'))) {
                  registry.mainClasses.set('AthenaWidget', value);
                 break;
             }
         }
     }
-    if (InputPillMain) {
-         for (const [key, value] of Object.entries(InputPillMain)) {
-             if (typeof value === 'function' && (key.includes('Window') || key.includes('InputPill'))) {
+    if (InputpillMain) {
+         for (const [key, value] of Object.entries(InputpillMain)) {
+             if (typeof value === 'function' && (key.includes('Window') || key.includes('Inputpill'))) {
                  registry.mainClasses.set('InputPill', value);
                 break;
             }
         }
     }
-    if (notesMain) {
-         for (const [key, value] of Object.entries(notesMain)) {
-             if (typeof value === 'function' && (key.includes('Window') || key.includes('notes'))) {
-                 registry.mainClasses.set('notes', value);
+    if (NotesMain) {
+         for (const [key, value] of Object.entries(NotesMain)) {
+             if (typeof value === 'function' && (key.includes('Window') || key.includes('Notes'))) {
+                 registry.mainClasses.set('Notes', value);
                 break;
             }
         }
     }
-    if (remindersMain) {
-         for (const [key, value] of Object.entries(remindersMain)) {
-             if (typeof value === 'function' && (key.includes('Window') || key.includes('reminders'))) {
+    if (RemindersMain) {
+         for (const [key, value] of Object.entries(RemindersMain)) {
+             if (typeof value === 'function' && (key.includes('Window') || key.includes('Reminders'))) {
                  registry.mainClasses.set('reminders', value);
                 break;
             }
         }
     }
-    if (AthenaWidgetIpc.default) {
-         registry.ipcModules.set('AthenaWidget', AthenaWidgetIpc.default);
+    if (AthenawidgetIpc.default) {
+         registry.ipcModules.set('AthenaWidget', AthenawidgetIpc.default);
     }
-    if (InputPillIpc.default) {
-         registry.ipcModules.set('InputPill', InputPillIpc.default);
+    if (InputpillIpc.default) {
+         registry.ipcModules.set('InputPill', InputpillIpc.default);
     }
-    if (notesIpc.default) {
-         registry.ipcModules.set('notes', notesIpc.default);
+    if (NotesIpc.default) {
+         registry.ipcModules.set('Notes', NotesIpc.default);
     }
-    if (remindersIpc.default) {
-         registry.ipcModules.set('reminders', remindersIpc.default);
+    if (RemindersIpc.default) {
+         registry.ipcModules.set('reminders', RemindersIpc.default);
     }
 
     return registry;
 }
 
 export function getDiscoveredApps(): string[] {
-    return ['AthenaWidget', 'InputPill', 'notes', 'reminders'];
+    return ['AthenaWidget', 'InputPill', 'Notes', 'reminders'];
 }
 
 export function getAppType(appName: string): 'platform-ui-component' | 'application' | 'widget' {
@@ -86,7 +86,7 @@ export function getAppPath(appName: string): string {
     const appPaths: Record<string, string> = {
         'AthenaWidget': 'platform/AthenaWidget',
         'InputPill': 'platform/InputPill',
-        'notes': 'apps/notes',
+        'Notes': 'apps/Notes',
         'reminders': 'apps/reminders'
     };
     return appPaths[appName] || `apps/${appName}`;
