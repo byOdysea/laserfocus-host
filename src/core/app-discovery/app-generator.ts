@@ -428,7 +428,7 @@ root.render(<${componentName} />);`;
             fs.mkdirSync(componentsDir, { recursive: true });
         }
         
-        const content = `import React, { useState, useEffect } from 'react';
+        const content = `import React from 'react';
 
 interface ${componentName}State {
     isLoading: boolean;
@@ -437,32 +437,32 @@ interface ${componentName}State {
 }
 
 export const ${componentName}: React.FC = () => {
-    const [state, setState] = useState<${componentName}State>({
+    const [state, setState] = React.useState<${componentName}State>({
         isLoading: false,
         error: null,
         data: null,
     });
 
     const handleExampleAction = async () => {
-        setState(prev => ({ ...prev, isLoading: true, error: null }));
+        setState((prev: ${componentName}State) => ({ ...prev, isLoading: true, error: null }));
         
         try {
             const result = await window.${apiName}.exampleAction({ example: 'data' });
             if (result.success) {
-                setState(prev => ({
+                setState((prev: ${componentName}State) => ({
                     ...prev,
                     data: result.result,
                     isLoading: false,
                 }));
             } else {
-                setState(prev => ({
+                setState((prev: ${componentName}State) => ({
                     ...prev,
                     error: result.error || 'Unknown error',
                     isLoading: false,
                 }));
             }
         } catch (error) {
-            setState(prev => ({
+            setState((prev: ${componentName}State) => ({
                 ...prev,
                 error: 'Failed to execute action',
                 isLoading: false,
