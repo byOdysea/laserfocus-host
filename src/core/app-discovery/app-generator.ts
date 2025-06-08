@@ -132,17 +132,17 @@ export class AppGenerator {
         const className = `${this.toPascalCase(appName)}Window`;
         const fileName = `${appName}.main.ts`;  // Already kebab-case from normalization
         
-        const content = `import { BrowserWindow, Display, app } from 'electron';
-import * as path from 'path';
+        const content = `import { BrowserWindow, Display } from 'electron';
+import { createAppFileLoader } from '@lib/utils/app-file-loader';
 import * as logger from '@utils/logger';
 
 export class ${className} {
     public window: BrowserWindow;
-    private viteDevServerUrl: string | undefined;
+    private fileLoader: ReturnType<typeof createAppFileLoader>;
     private preloadPath: string;
 
     constructor(primaryDisplay: Display, viteDevServerUrl: string | undefined, preloadPath: string) {
-        this.viteDevServerUrl = viteDevServerUrl;
+        this.fileLoader = createAppFileLoader(viteDevServerUrl);
         this.preloadPath = preloadPath;
         this.window = new BrowserWindow({
             width: 800,
@@ -166,23 +166,21 @@ export class ${className} {
         });
     }
 
-    init(): void {
-        if (this.viteDevServerUrl) {
-            // Development: Load from Vite dev server
-            const devPath = '${fullAppName}';
-            this.window.loadURL(\`\${this.viteDevServerUrl}/src/ui/\${devPath}/src/index.html\`);
-            logger.info('[${className}] Loading from Vite dev server');
-        } else {
-            // Production: Load from built files
-            const basePath = app.getAppPath();
-            const prodPath = '${fullAppName}';
-            const rendererPath = path.join(basePath, \`dist/ui/\${prodPath}/src/index.html\`);
-            logger.info(\`[${className}] Loading from built file: \${rendererPath}\`);
-            this.window.loadFile(rendererPath);
+    async init(): Promise<void> {
+        try {
+            await this.fileLoader.loadAppHtml(
+                this.window, 
+                '${fullAppName}', 
+                '[${className}]'
+            );
+            logger.info('[${className}] Successfully loaded HTML file');
+        } catch (error) {
+            logger.error('[${className}] Failed to load HTML file:', error);
+            throw error;
         }
         
         // Open DevTools in development
-        if (this.viteDevServerUrl) {
+        if (this.fileLoader.isDevelopment()) {
             // this.window.webContents.openDevTools({ mode: 'detach' });
         }
     }
