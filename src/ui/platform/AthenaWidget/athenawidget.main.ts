@@ -1,20 +1,20 @@
 // src/ui/athena-widget.ts
+import { createAppFileLoader } from '@lib/utils/app-file-loader';
 import * as logger from '@utils/logger';
-import { BrowserWindow, Display, app } from 'electron';
-import * as path from 'path';
+import { BrowserWindow, Display } from 'electron';
 
 
 export class AthenaWidgetWindow {
     public window: BrowserWindow;
-    private viteDevServerUrl: string | undefined;
+    private fileLoader: ReturnType<typeof createAppFileLoader>;
     private preloadPath: string;
 
     constructor(primaryDisplay: Display, viteDevServerUrl: string | undefined, preloadPath: string) {
-        this.viteDevServerUrl = viteDevServerUrl;
+        this.fileLoader = createAppFileLoader(viteDevServerUrl);
         this.preloadPath = preloadPath;
         this.window = new BrowserWindow({
-            width: 350, // Made smaller
-            height: 250, // Made smaller
+            width: 350, 
+            height: 250, 
             title: 'Laserfocus',
             webPreferences: {
                 preload: this.preloadPath,
@@ -30,18 +30,33 @@ export class AthenaWidgetWindow {
         });
     }
 
-    init(): void {
-        if (this.viteDevServerUrl) {
-            this.window.loadURL(`${this.viteDevServerUrl}src/ui/platform/AthenaWidget/src/index.html`);
-        } else {
-            const basePath = app.getAppPath();
-            const rendererPath = path.join(basePath, 'dist/ui/platform/AthenaWidget/src/index.html');
-            logger.info(`[AthenaWidgetWindow] Attempting to load file from: ${rendererPath}`);
-            this.window.loadFile(rendererPath);
+    async init(): Promise<void> {
+        try {
+            await this.fileLoader.loadAppHtml(
+                this.window, 
+                'platform/AthenaWidget', 
+                '[AthenaWidgetWindow]'
+            );
+            logger.info('[AthenaWidgetWindow] Successfully loaded HTML file');
+        } catch (error) {
+            logger.error('[AthenaWidgetWindow] Failed to load HTML file:', error);
+            throw error;
         }
         // logger.info('[AthenaWidgetWindow] Attempting to open DevTools for AthenaWidget...');
         // this.window.webContents.openDevTools({ mode: 'detach' });
         // logger.info('[AthenaWidgetWindow] Called openDevTools for AthenaWidget.');
+    }
+
+    focus(): void {
+        if (this.window && !this.window.isDestroyed()) {
+            this.window.focus();
+        }
+    }
+
+    close(): void {
+        if (this.window && !this.window.isDestroyed()) {
+            this.window.close();
+        }
     }
 
     sendConversationUpdate(type: string, content: string): void {

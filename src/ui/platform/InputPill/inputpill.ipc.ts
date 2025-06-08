@@ -1,4 +1,5 @@
 // src/apps/InputPill/input-pill.ipc.ts
+import { CanvasEngine } from '@/core/engine/canvas-engine';
 import { AppIpcModule, AppMainProcessInstances } from '@core/bridge/types';
 import { InputPill } from '@ui/platform/InputPill/inputpill.main'; // Specific type for appInstance
 import * as logger from '@utils/logger';
@@ -13,7 +14,7 @@ const InputPillIpcHandlers: AppIpcModule = {
 
     registerMainProcessHandlers: (
         ipcMainInstance: IpcMain,
-        canvasEngine: any, // Pragmatic: support both V1 and V2
+        canvasEngine: CanvasEngine, // Pragmatic: support both V1 and V2
         appInstance: InputPill, // Type assertion for clarity
         allAppInstances?: AppMainProcessInstances
     ) => {
@@ -21,8 +22,6 @@ const InputPillIpcHandlers: AppIpcModule = {
         
         logger.info(`[InputPill.ipc] Canvas Engine detected for InputPill handlers`);
 
-        // Example: If main-handlers.ts (or another service) emits specific events for InputPill
-        // This is a more decoupled approach we're aiming for.
         const handleAgentResponse = (response: string | object) => {
             if (appInstance && appInstance.window && !appInstance.window.isDestroyed()) {
                 logger.debug(`[InputPill.ipc] Sending 'agent-response' to InputPill UI:`, response);

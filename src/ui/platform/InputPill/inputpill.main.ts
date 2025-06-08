@@ -1,7 +1,7 @@
 // src/apps/InputPill/input-pill.main.ts
+import { createAppFileLoader } from '@lib/utils/app-file-loader';
 import * as logger from '@utils/logger';
-import { app, BrowserWindow, Display, ipcMain } from 'electron';
-import * as path from 'path';
+import { BrowserWindow, Display, ipcMain } from 'electron';
 
 const INPUT_PILL_WIDTH = 700;
 const INPUT_PILL_HEIGHT = 60;
@@ -9,8 +9,8 @@ const INPUT_PILL_Y_OFFSET_FROM_BOTTOM = 60;
 
 export class InputPill {
     public window: BrowserWindow | null = null;
+    private fileLoader: ReturnType<typeof createAppFileLoader>;
     private primaryDisplay: Display;
-    private viteDevServerUrl: string | undefined;
     private preloadScriptPath: string;
 
     constructor(
@@ -19,11 +19,11 @@ export class InputPill {
         preloadScriptPath: string
     ) {
         this.primaryDisplay = primaryDisplay;
-        this.viteDevServerUrl = viteDevServerUrl;
+        this.fileLoader = createAppFileLoader(viteDevServerUrl);
         this.preloadScriptPath = preloadScriptPath;
     }
 
-    public init(): void {
+    public async init(): Promise<void> {
         const workArea = this.primaryDisplay.workArea;
 
         const x = Math.round(workArea.x + (workArea.width - INPUT_PILL_WIDTH) / 2);
@@ -52,20 +52,16 @@ export class InputPill {
         this.window.setVisibleOnAllWorkspaces(true);
         this.window.setFullScreenable(false);
 
-        if (this.viteDevServerUrl) {
-            // Load from new ui/platform structure
-            const devUrl = `${this.viteDevServerUrl}src/ui/platform/InputPill/src/index.html`;
-            logger.info(`[InputPill.main] Loading dev URL: ${devUrl}`);
-            this.window.loadURL(devUrl).catch(err => {
-                logger.error('[InputPill.main] Failed to load InputPill dev URL:', err);
-            });
-        } else {
-            const basePath = app.getAppPath();
-            const prodPath = path.join(basePath, 'dist/ui/platform/InputPill/src/index.html');
-            logger.info(`[InputPill.main] Loading production file: ${prodPath}`);
-            this.window.loadFile(prodPath).catch(err => {
-                logger.error('[InputPill.main] Failed to load InputPill production file:', err);
-            });
+        try {
+            await this.fileLoader.loadAppHtml(
+                this.window, 
+                'platform/InputPill', 
+                '[InputPill.main]'
+            );
+            logger.info('[InputPill.main] Successfully loaded HTML file');
+        } catch (error) {
+            logger.error('[InputPill.main] Failed to load HTML file:', error);
+            throw error;
         }
 
         this.window.once('ready-to-show', () => {
