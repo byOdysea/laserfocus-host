@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-export interface remindersAPI {
+export interface RemindersAPI {
     exampleAction: (data: any) => Promise<{ success: boolean; result?: any; error?: string }>;
     focusWindow: () => void;
 }
@@ -10,11 +10,11 @@ export interface remindersAPI {
 contextBridge.exposeInMainWorld('remindersAPI', {
     exampleAction: (data: any) => ipcRenderer.invoke('reminders:example-action', data),
     focusWindow: () => ipcRenderer.send('reminders:focus'),
-} as remindersAPI);
+} as RemindersAPI);
 
 // Also expose to global window type for TypeScript
 declare global {
     interface Window {
-        remindersAPI: remindersAPI;
+        remindersAPI: RemindersAPI;
     }
 }

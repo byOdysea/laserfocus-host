@@ -1,12 +1,63 @@
+import { VALIDATION } from '@/core/infrastructure/config/ui-constants';
 import log from 'electron-log';
 
-// Configure electron-log
-log.transports.file.level = 'debug';   // Log debug and above to file
-log.transports.console.level = 'info';  // Log info and above to console
-// Optional: Customize format if desired. Default is usually fine.
-// electronLog.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{processType}] [{level}] {text}';
+// Environment-aware logging configuration
+const IS_DEV = process.env.NODE_ENV === 'development';
+const IS_TEST = process.env.NODE_ENV === 'test';
 
-const MAX_LOG_CONTENT_LENGTH = 100;
+// Default log levels based on environment
+const getDefaultLogLevel = () => {
+  if (IS_TEST) return 'error'; // Minimal logging during tests
+  if (IS_DEV) return 'debug';  // Verbose logging in development
+  return 'info';               // Standard logging in production
+};
+
+// Configure electron-log with environment awareness
+const defaultLevel = getDefaultLogLevel();
+log.transports.file.level = IS_DEV ? 'debug' : 'info';     // Always log debug to file in dev
+log.transports.console.level = defaultLevel;               // Environment-aware console logging
+
+// Optional: Set format for better readability in development
+if (IS_DEV) {
+  log.transports.console.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}';
+}
+
+/**
+ * Update logging levels dynamically (e.g., from system configuration)
+ */
+export function updateLogLevel(level: 'debug' | 'info' | 'warn' | 'error'): void {
+  log.transports.console.level = level;
+  // Always keep file logging at debug level for troubleshooting, except in error-only mode
+  log.transports.file.level = level === 'error' ? 'error' : 'debug';
+  
+  info(`[Logger] Log level updated to: console=${level}, file=${log.transports.file.level}`);
+}
+
+/**
+ * Get current logging configuration
+ */
+export function getLogConfig(): { console: string; file: string; environment: string } {
+  return {
+    console: log.transports.console.level as string,
+    file: log.transports.file.level as string,
+    environment: process.env.NODE_ENV || 'unknown'
+  };
+}
+
+/**
+ * Initialize logger with configuration system integration
+ * Should be called after configuration is loaded
+ */
+export function initializeWithConfig(): void {
+  try {
+    // For bundled environment, the configuration manager should be available directly
+    // We'll skip the config integration for now to avoid import issues in bundled code
+    info(`[Logger] Initialized - Environment: ${process.env.NODE_ENV || 'unknown'}`);
+  } catch (error) {
+    // Fallback gracefully if config system isn't available
+    warn(`[Logger] Could not integrate with config system:`, error);
+  }
+}
 
 // --- Internal Helper Functions for Formatting LangChain Objects ---
 function getMessageContent(messageInstance: any): string {
@@ -24,8 +75,8 @@ function getMessageContent(messageInstance: any): string {
 
 function formatIndividualContent(content: any): string {
   let displayContent = typeof content === 'string' ? content : JSON.stringify(content);
-  if (displayContent.length > MAX_LOG_CONTENT_LENGTH) {
-    displayContent = displayContent.substring(0, MAX_LOG_CONTENT_LENGTH) + "...";
+  if (displayContent.length > VALIDATION.MAX_LOG_CONTENT_LENGTH) {
+    displayContent = displayContent.substring(0, VALIDATION.MAX_LOG_CONTENT_LENGTH) + "...";
   }
   return displayContent.replace(/\n/g, ' ');
 }

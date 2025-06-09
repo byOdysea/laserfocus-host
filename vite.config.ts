@@ -8,7 +8,7 @@ import {
     discoverAppsFromFileSystem,
     generateViteElectronEntries,
     generateViteInputs
-} from './src/core/app-discovery/vite-app-discovery';
+} from './src/core/infrastructure/build/vite-app-discovery';
 
 // Discover UI components automatically
 const discoveredUIComponents = discoverAppsFromFileSystem('src/ui');

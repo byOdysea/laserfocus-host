@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 
 interface RemindersAppState {
     isLoading: boolean;
@@ -7,32 +7,32 @@ interface RemindersAppState {
 }
 
 export const RemindersApp: React.FC = () => {
-    const [state, setState] = useState<RemindersAppState>({
+    const [state, setState] = React.useState<RemindersAppState>({
         isLoading: false,
         error: null,
         data: null,
     });
 
     const handleExampleAction = async () => {
-        setState(prev => ({ ...prev, isLoading: true, error: null }));
+        setState((prev: RemindersAppState) => ({ ...prev, isLoading: true, error: null }));
         
         try {
             const result = await window.remindersAPI.exampleAction({ example: 'data' });
             if (result.success) {
-                setState(prev => ({
+                setState((prev: RemindersAppState) => ({
                     ...prev,
                     data: result.result,
                     isLoading: false,
                 }));
             } else {
-                setState(prev => ({
+                setState((prev: RemindersAppState) => ({
                     ...prev,
                     error: result.error || 'Unknown error',
                     isLoading: false,
                 }));
             }
         } catch (error) {
-            setState(prev => ({
+            setState((prev: RemindersAppState) => ({
                 ...prev,
                 error: 'Failed to execute action',
                 isLoading: false,

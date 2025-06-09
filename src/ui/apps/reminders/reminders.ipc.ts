@@ -1,6 +1,5 @@
 import { IpcMain } from 'electron';
-import { CanvasEngine } from '@core/engine/canvas-engine';
-import { AppIpcModule, AppMainProcessInstances } from '@core/bridge/types';
+import { AppIpcModule, AppMainProcessInstances } from '@core/platform/ipc/types';
         import { RemindersWindow } from '@ui/apps/reminders/reminders.main';
 import * as logger from '@utils/logger';
 
@@ -9,7 +8,6 @@ const RemindersIpcHandlers: AppIpcModule = {
     
     registerMainProcessHandlers: (
         ipcMain: IpcMain,
-        canvasEngine: CanvasEngine,
         appInstance: RemindersWindow,
         allAppInstances?: AppMainProcessInstances
     ) => {
