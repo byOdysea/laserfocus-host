@@ -1,4 +1,5 @@
 // src/ui/athena-widget.ts
+import { getWindowRegistry } from '@/core/platform/windows/window-registry';
 import { createAppFileLoader } from '@lib/utils/app-file-loader';
 import * as logger from '@utils/logger';
 import { BrowserWindow, Display } from 'electron';
@@ -14,8 +15,8 @@ export class AthenaWidgetWindow {
         this.preloadPath = preloadPath;
         this.window = new BrowserWindow({
             width: 350, 
-            height: 250, 
-            title: 'Laserfocus',
+            height: 500, 
+            title: 'Athena Conversation Monitor', // Unique, descriptive title
             webPreferences: {
                 preload: this.preloadPath,
                 nodeIntegration: true,
@@ -38,6 +39,20 @@ export class AthenaWidgetWindow {
                 '[AthenaWidgetWindow]'
             );
             logger.info('[AthenaWidgetWindow] Successfully loaded HTML file');
+            
+            // Register with Window Registry for better modularity
+            const windowRegistry = getWindowRegistry();
+            windowRegistry.registerWindow({
+                id: 'athena-widget',
+                title: 'Athena Conversation Monitor',
+                type: 'platform',
+                componentName: 'AthenaWidget',
+                window: this.window,
+                instance: this,
+                capabilities: ['conversation-monitor', 'chat-display', 'agent-status']
+            });
+            
+            logger.info('[AthenaWidgetWindow] Registered with Window Registry');
         } catch (error) {
             logger.error('[AthenaWidgetWindow] Failed to load HTML file:', error);
             throw error;

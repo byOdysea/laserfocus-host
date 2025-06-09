@@ -1,6 +1,10 @@
 // src/InputPill/preload.ts
-console.log('--- [InputPill/preload.ts] SCRIPT STARTED ---');
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+
+// Use console.debug for preload script debugging - runs in renderer context
+if (process.env.NODE_ENV === 'development') {
+  console.debug('--- [InputPill/preload.ts] SCRIPT STARTED ---');
+}
 
 contextBridge.exposeInMainWorld('electronAPI', {
   ipcRendererSend: (channel: string, ...args: any[]) => ipcRenderer.send(channel, ...args),

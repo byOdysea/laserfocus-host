@@ -47,16 +47,65 @@ LaserFocus is an Electron-based desktop application that leverages an AI agent t
    yarn install
    ```
 
-3. **Environment setup:**
+3. **Environment setup for development:**
    ```bash
-   # Create .env file in project root
-   echo "GOOGLE_API_KEY=your_api_key_here" > .env
+   # Copy the example file and add your API key
+   cp .env.example .env
+   # Then edit .env and add your Google AI API key
    ```
 
 4. **Run the application:**
    ```bash
+   # Development mode (uses .env file automatically)
    yarn dev
+   
+   # Production build
+   yarn start
    ```
+
+### Development Environment
+
+**🔧 Automatic Environment Loading**
+
+LaserFocus automatically loads configuration from `.env` files in development mode:
+
+- **✅ API Keys**: Automatically loaded from `GOOGLE_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
+- **✅ Provider Settings**: Override config with `PROVIDER_SERVICE`, `PROVIDER_MODEL`, etc.
+- **✅ Smart Detection**: Uses the first available API key found in environment variables
+
+**Environment Variables:**
+```bash
+# Primary API Key (choose one)
+GOOGLE_API_KEY=your-google-ai-api-key
+OPENAI_API_KEY=your-openai-api-key  
+ANTHROPIC_API_KEY=your-anthropic-api-key
+
+# Provider Configuration (optional overrides)
+PROVIDER_SERVICE=google                    # google, openai, anthropic, ollama
+PROVIDER_MODEL=gemini-2.0-flash-lite      # Model name for your provider
+PROVIDER_TEMPERATURE=0.2                   # Creativity level (0-2)
+PROVIDER_MAX_TOKENS=2048                   # Max response length
+
+# Development Settings
+NODE_ENV=development
+LOG_LEVEL=debug                            # Override environment default (debug, info, warn, error)
+```
+
+**Quick Setup:**
+```bash
+cp .env.example .env
+# Edit .env and add your API key
+```
+This approach:
+1. Uses the standard `.env.example` pattern
+2. Simple copy and edit workflow
+3. All available options clearly documented
+4. No interactive prompts needed
+
+**No Environment Setup Required:**
+- Production builds use the built-in configuration UI
+- Settings are saved securely with encrypted API keys
+- Environment variables only override config in development mode
 
 ### Basic Usage Examples
 
@@ -385,8 +434,6 @@ Every window position is validated against:
 - **Overlap Detection**: Verify no two windows share the same bounds
 - **Size Constraints**: Enforce minimum width/height requirements
 - **Gap Compliance**: Validate proper spacing between adjacent windows
-
-
 
 ## Memory Management
 
@@ -1051,4 +1098,347 @@ private resizeAndMoveWindow(args: z.infer<typeof resizeAndMoveWindowSchema>) {
 - **Google AI**: For Gemini language model integration
 - **Electron**: For cross-platform desktop application framework
 - **Vite**: For fast development experience
+
+## Model Context Protocol (MCP) Integration
+
+Laserfocus includes comprehensive support for the **Model Context Protocol (MCP) v2025.3.26** with a **simplified, server-agnostic approach**. Users only need to specify minimal configuration (command + args) and our MCP manager handles the rest with sensible defaults.
+
+### 🚀 **Simple Setup Philosophy**
+
+Our MCP implementation is designed to be **completely agnostic** to MCP servers:
+- ✅ **Minimal Configuration** - Just specify command and args
+- ✅ **Sensible Defaults** - Everything else is handled automatically
+- ✅ **Server Agnostic** - Works with any MCP-compliant server
+- ✅ **Zero Boilerplate** - No need for extensive configuration
+- ✅ **Optional Advanced Features** - Available when needed
+
+### Quick Start - Just Command & Args
+
+The simplest MCP server configuration:
+
+```json
+{
+  "enabled": true,
+  "servers": [
+    {
+      "name": "filesystem",
+      "stdio": {
+        "command": "@modelcontextprotocol/server-filesystem",
+        "args": ["./"]
+      }
+    }
+  ]
+}
+```
+
+That's it! Our MCP manager automatically:
+- Detects the best executor (npx for npm packages)
+- Enables all MCP components (Tools, Resources, Prompts)
+- Sets reasonable timeouts and retry logic
+- Handles authentication and connection management
+- Provides comprehensive error handling
+
+### Execution Methods
+
+#### **NPX (Default for npm packages)**
+```json
+{
+  "name": "github",
+  "stdio": {
+    "command": "@modelcontextprotocol/server-github",
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+    }
+  }
+}
+```
+
+#### **UVX (For Python packages)**
+```json
+{
+  "name": "brave-search",
+  "stdio": {
+    "executor": "uvx",
+    "command": "mcp-server-brave-search",
+    "env": {
+      "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+    }
+  }
+}
+```
+
+#### **Docker (For containerized servers)**
+```json
+{
+  "name": "everything-server",
+  "stdio": {
+    "executor": "docker",
+    "dockerImage": "modelcontextprotocol/server-everything:latest"
+  }
+}
+```
+
+#### **Direct Command (For local binaries)**
+```json
+{
+  "name": "custom-server",
+  "stdio": {
+    "executor": "direct",
+    "command": "/usr/local/bin/my-mcp-server",
+    "args": ["--config", "config.json"]
+  }
+}
+```
+
+### Real-World Examples
+
+#### **Development Setup**
+```json
+{
+  "enabled": true,
+  "servers": [
+    {
+      "name": "filesystem",
+      "stdio": {
+        "command": "@modelcontextprotocol/server-filesystem",
+        "args": ["./"]
+      }
+    },
+    {
+      "name": "github",
+      "stdio": {
+        "command": "@modelcontextprotocol/server-github",
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "memory", 
+      "stdio": {
+        "command": "@modelcontextprotocol/server-memory"
+      }
+    }
+  ]
+}
+```
+
+#### **Research & Analysis Setup**
+```json
+{
+  "enabled": true,
+  "servers": [
+    {
+      "name": "brave-search",
+      "stdio": {
+        "executor": "uvx",
+        "command": "mcp-server-brave-search",
+        "env": {
+          "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "postgres",
+      "stdio": {
+        "executor": "uvx", 
+        "command": "mcp-server-postgres",
+        "args": ["postgresql://localhost:5432/research"],
+        "env": {
+          "PGPASSWORD": "${DB_PASSWORD}"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Advanced Features (Optional)
+
+Only specify advanced features when you need them:
+
+#### **Tool Filtering (Security)**
+```json
+{
+  "name": "postgres",
+  "stdio": {
+    "executor": "uvx",
+    "command": "mcp-server-postgres", 
+    "args": ["postgresql://localhost:5432/mydb"]
+  },
+  "toolFilters": {
+    "blockedTools": ["drop_table", "truncate", "delete_all"]
+  }
+}
+```
+
+#### **Remote Servers with Authentication**
+```json
+{
+  "name": "enterprise-api",
+  "transport": "streamableHttp",
+  "streamableHttp": {
+    "url": "https://api.company.com/mcp",
+    "auth": {
+      "type": "oauth2.1",
+      "clientId": "${CLIENT_ID}",
+      "clientSecret": "${CLIENT_SECRET}",
+      "tokenUrl": "https://auth.company.com/token"
+    }
+  }
+}
+```
+
+#### **Component Control (Granular)**
+```json
+{
+  "name": "read-only-server",
+  "stdio": {
+    "command": "@modelcontextprotocol/server-database"
+  },
+  "componentFilters": {
+    "enablePrompts": false,  // Disable prompts
+    "blockedResources": ["sensitive:*"]  // Block sensitive resources
+  }
+}
+```
+
+### Default Behavior
+
+Our MCP manager provides intelligent defaults:
+
+| Setting | Default Value | Description |
+|---------|---------------|-------------|
+| `executor` | `npx` (for npm packages) | Auto-detected based on command |
+| `transport` | `stdio` | Local process communication |
+| `timeout` | `15000ms` | Connection timeout |
+| `retries` | `2` | Connection retry attempts |
+| `enableTools` | `true` | All tools enabled by default |
+| `enableResources` | `true` | All resources enabled by default |
+| `enablePrompts` | `true` | All prompts enabled by default |
+| `toolAnnotations` | `false` | Simplified for performance |
+
+### Environment Variables
+
+Securely manage credentials:
+
+```bash
+# .env file
+GITHUB_TOKEN=ghp_your_token_here
+BRAVE_API_KEY=your_brave_api_key
+DB_PASSWORD=your_db_password
+```
+
+Reference in configuration:
+```json
+{
+  "env": {
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+  }
+}
+```
+
+### Popular MCP Servers
+
+#### **Official Servers**
+- `@modelcontextprotocol/server-filesystem` - File operations
+- `@modelcontextprotocol/server-github` - GitHub integration  
+- `@modelcontextprotocol/server-memory` - Persistent memory
+- `@modelcontextprotocol/server-fetch` - Web content fetching
+
+#### **Community Servers**
+- `mcp-server-brave-search` - Web search
+- `mcp-server-postgres` - PostgreSQL database
+- `mcp-server-git` - Git operations
+- `mcp-server-slack` - Slack integration
+
+### Configuration Migration
+
+#### **From Complex to Simple**
+```json
+// Old (complex)
+{
+  "name": "filesystem",
+  "transport": "stdio", 
+  "enabled": true,
+  "stdio": {
+    "executor": "npx",
+    "command": "@modelcontextprotocol/server-filesystem",
+    "args": ["./"],
+    "env": {}
+  },
+  "componentFilters": {
+    "enableTools": true,
+    "enableResources": true,
+    "enablePrompts": false
+  },
+  "toolFilters": {
+    "allowedTools": ["read_file", "write_file"],
+    "blockedTools": []
+  },
+  "timeout": 10000,
+  "retries": 3
+}
+
+// New (simple)
+{
+  "name": "filesystem",
+  "stdio": {
+    "command": "@modelcontextprotocol/server-filesystem",
+    "args": ["./"]
+  }
+}
+```
+
+### UI Configuration
+
+1. Navigate to **Settings → Integrations**
+2. Enable **MCP Support**  
+3. Add servers with minimal configuration:
+   ```json
+   {
+     "name": "my-server",
+     "stdio": {
+       "command": "my-mcp-server"
+     }
+   }
+   ```
+4. Test connection and you're done!
+
+### Server-Agnostic Design
+
+Our MCP manager is completely agnostic to server implementations:
+
+- ✅ **No hardcoded server logic** - Works with any MCP server
+- ✅ **Dynamic capability detection** - Discovers features automatically
+- ✅ **Flexible tool handling** - Adapts to server-provided tools
+- ✅ **Universal resource support** - Works with any resource type
+- ✅ **Protocol compliance** - Follows MCP specification exactly
+
+### Troubleshooting
+
+#### **Server Won't Start**
+1. Check if the command exists: `which @modelcontextprotocol/server-filesystem`
+2. Install if needed: `npm install -g @modelcontextprotocol/server-filesystem`
+3. Verify environment variables are set
+
+#### **Authentication Errors**
+1. Check environment variable names match exactly
+2. Verify tokens haven't expired
+3. Test credentials manually
+
+#### **Performance Issues**
+1. Our defaults are optimized for most use cases
+2. Only adjust timeouts if you experience issues
+3. Monitor connection status in Settings UI
+
+### Why This Approach?
+
+- **User-Friendly**: No complex configuration required
+- **Server-Agnostic**: Works with any MCP-compliant server
+- **Sensible Defaults**: Optimized for common use cases
+- **Extensible**: Advanced features available when needed
+- **Future-Proof**: Adapts to new MCP servers automatically
+
+*Just specify command and args - our MCP manager handles the rest!*
 

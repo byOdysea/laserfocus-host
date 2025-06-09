@@ -1,6 +1,7 @@
 import { createAppFileLoader } from '@lib/utils/app-file-loader';
 import * as logger from '@utils/logger';
 import { BrowserWindow, Display } from 'electron';
+import { getWindowRegistry } from '@core/platform/windows/window-registry';
 
 export class ByokwidgetWindow {
     public window: BrowserWindow;
@@ -15,12 +16,12 @@ export class ByokwidgetWindow {
         // Athena is at top-right: x: width - 350 - 20, y: 20, size: 350x250
         const athenaX = primaryDisplay.workArea.x + primaryDisplay.workAreaSize.width - 350 - 20;
         const athenaY = primaryDisplay.workArea.y + 20;
-        const athenaHeight = 250;
+        const athenaHeight = 500;
         
         this.window = new BrowserWindow({
             width: 350, // Same width as Athena widget
-            height: 120, // Compact height for minimal UI
-            title: 'API Key Helper',
+            height: 125, // Smaller height for compact config interface
+            title: 'Laserfocus Configuration',
             webPreferences: {
                 preload: this.preloadPath,
                 nodeIntegration: false,
@@ -29,7 +30,7 @@ export class ByokwidgetWindow {
             frame: false,
             transparent: true,
             vibrancy: 'sidebar',
-            x: athenaX, // Same X position as Athena
+            x: athenaX, // Slightly offset from Athena
             y: athenaY + athenaHeight + 10, // 10px gap below Athena
             alwaysOnTop: false,
             resizable: false,
@@ -50,6 +51,20 @@ export class ByokwidgetWindow {
                 '[ByokwidgetWindow]'
             );
             logger.info('[ByokwidgetWindow] Successfully loaded HTML file');
+            
+            // Register with Window Registry for better modularity
+            const windowRegistry = getWindowRegistry();
+            windowRegistry.registerWindow({
+                id: 'byok-widget',
+                title: 'Laserfocus Configuration Manager',
+                type: 'platform',
+                componentName: 'Byokwidget',
+                window: this.window,
+                instance: this,
+                capabilities: ['api-key-management', 'configuration', 'settings', 'provider-management']
+            });
+            
+            logger.info('[ByokwidgetWindow] Registered with Window Registry');
         } catch (error) {
             logger.error('[ByokwidgetWindow] Failed to load HTML file:', error);
             throw error;
@@ -63,7 +78,22 @@ export class ByokwidgetWindow {
 
     focus(): void {
         if (this.window && !this.window.isDestroyed()) {
+            // If window is minimized, restore it
+            if (this.window.isMinimized()) {
+                this.window.restore();
+            }
+            
+            // If window is hidden, show it
+            if (!this.window.isVisible()) {
+                this.window.show();
+            }
+            
+            // Bring window to front and focus
             this.window.focus();
+            
+            logger.info('[ByokwidgetWindow] Window focused and brought to front');
+        } else {
+            logger.warn('[ByokwidgetWindow] Cannot focus - window is destroyed or does not exist');
         }
     }
 

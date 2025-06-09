@@ -15,7 +15,7 @@ export function registerHandlers(athenaWidgetWindow: BrowserWindow): void {
 export const moduleId = "AthenaWidget";
 export { registerHandlers as registerMainProcessHandlers };
 
-// Legacy default export for compatibility with app registry
+// Default export for app registry
 const AthenaWidgetIpcHandlers = {
     moduleId: "AthenaWidget",
     registerMainProcessHandlers: registerHandlers

@@ -6,7 +6,10 @@ if (queryInput) {
     queryInput.addEventListener('keypress', (event: KeyboardEvent) => {
     if (event.key === 'Enter' && queryInput.value.trim() !== '') {
         const query = queryInput.value.trim();
-        console.log(`InputPill: Sending query to main: ${query}`);
+        // Use console.debug for renderer debugging
+        if (process.env.NODE_ENV === 'development') {
+            console.debug(`InputPill: Sending query to main: ${query}`);
+        }
         window.electronAPI.ipcRendererSend('run-agent', query);
                 queryInput.value = ''; // Clear the input after sending
     }
@@ -15,6 +18,8 @@ if (queryInput) {
 
 // Listen for responses (optional, if you want InputPill to show something)
 const cleanupAgentResponseListener = window.electronAPI.ipcRendererOn('agent-response', (event: IpcRendererEvent, response: any) => {
-    console.log('InputPill: Received agent response in pill (can be ignored or used for status):', response);
+    if (process.env.NODE_ENV === 'development') {
+        console.debug('InputPill: Received agent response in pill (can be ignored or used for status):', response);
+    }
     // You could update a status indicator here if needed
 });

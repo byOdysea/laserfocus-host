@@ -1,4 +1,5 @@
 // src/apps/InputPill/input-pill.main.ts
+import { getWindowRegistry } from '@/core/platform/windows/window-registry';
 import { createAppFileLoader } from '@lib/utils/app-file-loader';
 import * as logger from '@utils/logger';
 import { BrowserWindow, Display, ipcMain } from 'electron';
@@ -32,6 +33,7 @@ export class InputPill {
         this.window = new BrowserWindow({
             width: INPUT_PILL_WIDTH,
             height: INPUT_PILL_HEIGHT,
+            title: 'Laserfocus Input Interface', // Unique, descriptive title
             x: x,
             y: y,
             frame: false,
@@ -59,6 +61,20 @@ export class InputPill {
                 '[InputPill.main]'
             );
             logger.info('[InputPill.main] Successfully loaded HTML file');
+            
+            // Register with Window Registry for better modularity
+            const windowRegistry = getWindowRegistry();
+            windowRegistry.registerWindow({
+                id: 'input-pill',
+                title: 'Laserfocus Input Interface',
+                type: 'platform',
+                componentName: 'InputPill',
+                window: this.window,
+                instance: this,
+                capabilities: ['user-input', 'command-interface', 'floating-ui']
+            });
+            
+            logger.info('[InputPill.main] Registered with Window Registry');
         } catch (error) {
             logger.error('[InputPill.main] Failed to load HTML file:', error);
             throw error;

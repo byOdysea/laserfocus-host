@@ -57,11 +57,11 @@ export class AppFileLoader {
         
         for (let i = 0; i < possiblePaths.length; i++) {
             const currentPath = possiblePaths[i];
-            logger.info(`${loggerPrefix} Attempting to load file: ${currentPath}`);
+            logger.debug(`${loggerPrefix} Attempting to load file: ${currentPath}`);
             
             try {
                 await window.loadFile(currentPath);
-                logger.info(`${loggerPrefix} Successfully loaded file: ${currentPath}`);
+                logger.debug(`${loggerPrefix} Successfully loaded file: ${currentPath}`);
                 return;
             } catch (error) {
                 logger.warn(`${loggerPrefix} Failed to load file: ${currentPath}`, error);
