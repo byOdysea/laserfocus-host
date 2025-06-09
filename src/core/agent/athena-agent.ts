@@ -400,7 +400,23 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     }
     
     /**
-     * Check if agent has valid configuration
+     * Check if agent has valid configuration (async to properly check API keys)
+     */
+    async hasValidConfigurationAsync(): Promise<boolean> {
+        const providerConfig = this.getConfig();
+        const errors = await this.llmFactory.validateProviderAsync(providerConfig);
+        
+        // Ollama doesn't require API key
+        if (providerConfig.service === 'ollama') {
+            return !errors.some(e => e.includes('Model name'));
+        }
+        
+        return errors.length === 0;
+    }
+
+    /**
+     * Check if agent has valid configuration (sync version for backward compatibility)
+     * Note: This may not reflect actual API key availability
      */
     hasValidConfiguration(): boolean {
         const providerConfig = this.getConfig();

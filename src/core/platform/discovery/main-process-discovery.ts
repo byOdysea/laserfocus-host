@@ -1,7 +1,9 @@
 import { AppIpcModule, AppMainProcessInstances } from '@core/platform/ipc/types';
 import * as logger from '@utils/logger';
 import { Display } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
+
 interface AppModule {
     name: string;
     type: 'platform' | 'app' | 'widget';
@@ -9,6 +11,7 @@ interface AppModule {
     ipcHandlers?: AppIpcModule;
     instance?: any;
     fullPath: string;
+    actualPath: string; // File system path
 }
 
 interface UIDiscoveryConfig {
@@ -21,6 +24,15 @@ interface UIDiscoveryConfig {
 interface UIComponentRegistry {
     mainClasses: Map<string, any>;
     ipcModules: Map<string, any>;
+}
+
+interface DiscoveredComponent {
+    name: string;
+    type: 'platform' | 'app' | 'widget';
+    path: string;
+    hasMain: boolean;
+    hasIpc: boolean;
+    hasPreload: boolean;
 }
 
 export class UIDiscoveryService {
@@ -74,7 +86,8 @@ export class UIDiscoveryService {
 
         try {
             const { primaryDisplay, viteDevServerUrl, preloadBasePath } = this.config;
-            const preloadPath = path.join(preloadBasePath, `../ui/${app.fullPath}/preload.js`);
+            // Use actualPath for preload script to avoid case sensitivity issues
+            const preloadPath = path.join(preloadBasePath, `../ui/${app.actualPath}/preload.js`);
             const instance = new app.mainClass(primaryDisplay, viteDevServerUrl, preloadPath);
             
             if (instance.init && typeof instance.init === 'function') {
@@ -109,17 +122,32 @@ export class UIDiscoveryService {
     }
 
     private async discoverUIComponents(): Promise<void> {
-        // Try to load the registry dynamically
+        // Try to load the registry dynamically first
         try {
             const registryModule = await import('./app-registry');
             this.registry = registryModule.createAppRegistry();
             logger.info(`[UIDiscovery] Using auto-generated UI component registry...`);
+            
+            // Use registry-based discovery
+            await this.discoverFromRegistry();
+            
         } catch (error) {
-            logger.warn(`[UIDiscovery] Could not load UI component registry:`, error);
+            logger.warn(`[UIDiscovery] Could not load UI component registry, falling back to dynamic discovery:`, error);
             this.registry = { mainClasses: new Map(), ipcModules: new Map() };
-            logger.info(`[UIDiscovery] Using empty registry...`);
+            
+            // Fallback to dynamic file system discovery
+            await this.discoverUIComponentsDynamically();
         }
         
+        logger.info(`[UIDiscovery] Discovered ${this.platformComponents.size} platform UI components:`, Array.from(this.platformComponents.keys()));
+        logger.info(`[UIDiscovery] Discovered ${this.applications.size} applications:`, Array.from(this.applications.keys()));
+        logger.info(`[UIDiscovery] Discovered ${this.widgets.size} widgets:`, Array.from(this.widgets.keys()));
+    }
+
+    /**
+     * Original registry-based discovery (refactored)
+     */
+    private async discoverFromRegistry(): Promise<void> {
         if (!this.registry) {
             logger.error(`[UIDiscovery] Registry is null, cannot discover UI components`);
             return;
@@ -130,7 +158,8 @@ export class UIDiscoveryService {
             const app: AppModule = { 
                 name: appName,
                 type: this.classifyAppType(appName),
-                fullPath: this.getAppPath(appName)
+                fullPath: this.getAppPath(appName),
+                actualPath: this.getAppPath(appName)  // Store the actual file system path
             };
             
             if (mainClass) {
@@ -165,7 +194,8 @@ export class UIDiscoveryService {
                     name: appName, 
                     type: this.classifyAppType(appName),
                     ipcHandlers,
-                    fullPath: this.getAppPath(appName)
+                    fullPath: this.getAppPath(appName),
+                    actualPath: this.getAppPath(appName)  // Store the actual file system path
                 };
                 
                 if (app.type === 'platform') {
@@ -180,10 +210,6 @@ export class UIDiscoveryService {
                 }
             }
         }
-        
-        logger.info(`[UIDiscovery] Discovered ${this.platformComponents.size} platform UI components:`, Array.from(this.platformComponents.keys()));
-        logger.info(`[UIDiscovery] Discovered ${this.applications.size} applications:`, Array.from(this.applications.keys()));
-        logger.info(`[UIDiscovery] Discovered ${this.widgets.size} widgets:`, Array.from(this.widgets.keys()));
     }
 
     /**
@@ -194,8 +220,8 @@ export class UIDiscoveryService {
             const registryModule = require('./app-registry');
             return registryModule.getAppType(appName);
         } catch (error) {
-            // Fallback for known platform UI components - using PascalCase to match registry
-            const platformUIComponents = ['InputPill', 'AthenaWidget', 'Byokwidget'];
+            // Fallback for known platform UI components - using exact case to match registry
+            const platformUIComponents = ['AthenaWidget', 'Byokwidget', 'InputPill'];
             return platformUIComponents.includes(appName) ? 'platform' : 'app';
         }
     }
@@ -208,11 +234,27 @@ export class UIDiscoveryService {
             const registryModule = require('./app-registry');
             return registryModule.getAppPath(appName);
         } catch (error) {
+            // Fallback with correct case preservation for all known components
+            const knownAppPaths: Record<string, string> = {
+                // Platform components (PascalCase)
+                'AthenaWidget': 'platform/AthenaWidget',
+                'Byokwidget': 'platform/Byokwidget',
+                'InputPill': 'platform/InputPill',
+                // Applications (lowercase)
+                'Notes': 'apps/notes',
+                'Reminders': 'apps/reminders',
+                'Settings': 'apps/settings'
+            };
+            
+            if (knownAppPaths[appName]) {
+                return knownAppPaths[appName];
+            }
+            
             const appType = this.classifyAppType(appName);
             const basePath = appType === 'platform' ? 'platform' : 'apps';
-            // Convert PascalCase app names to lowercase for file system paths
-            const lowercaseAppName = appName.toLowerCase();
-            return `${basePath}/${lowercaseAppName}`;
+            // For unknown apps, keep the original case to avoid breaking paths
+            const safeName = appName;
+            return `${basePath}/${safeName}`;
         }
     }
 
@@ -245,7 +287,8 @@ export class UIDiscoveryService {
         for (const [appName, app] of this.platformComponents) {
             if (app.mainClass) {
                 try {
-                    const preloadPath = path.join(preloadBasePath, `../ui/${app.fullPath}/preload.js`);
+                    // Use actualPath for preload script to avoid case sensitivity issues
+                    const preloadPath = path.join(preloadBasePath, `../ui/${app.actualPath}/preload.js`);
                     const instance = new app.mainClass(primaryDisplay, viteDevServerUrl, preloadPath);
                     
                     if (instance.init && typeof instance.init === 'function') {
@@ -351,6 +394,195 @@ export class UIDiscoveryService {
             logger.error('[UIDiscovery] Failed to reload registry:', error);
             throw error;
         }
+    }
+
+    /**
+     * NEW: Dynamic discovery by scanning the file system
+     */
+    private async discoverUIComponentsDynamically(): Promise<void> {
+        logger.info('[UIDiscovery] Starting dynamic file system discovery...');
+        
+        const uiBasePath = path.join(process.cwd(), 'src', 'ui');
+        const discoveredComponents = await this.scanUIDirectory(uiBasePath);
+        
+        logger.info(`[UIDiscovery] Discovered ${discoveredComponents.length} components via file system scan`);
+        
+        for (const component of discoveredComponents) {
+            const app: AppModule = {
+                name: component.name,
+                type: component.type,
+                fullPath: component.path,
+                actualPath: component.path  // Store the actual file system path
+            };
+            
+            // Try to dynamically load main class and IPC handlers
+            if (component.hasMain) {
+                try {
+                    const mainModulePath = path.join(uiBasePath, component.path, this.getMainFileName(component.name));
+                    const mainModule = await import(mainModulePath);
+                    
+                    // Find the main class (usually ends with 'Window')
+                    for (const [key, value] of Object.entries(mainModule)) {
+                        if (typeof value === 'function' && (key.includes('Window') || key.includes(component.name))) {
+                            app.mainClass = value;
+                            logger.debug(`[UIDiscovery] Loaded main class for ${component.name}: ${key}`);
+                            break;
+                        }
+                    }
+                } catch (error) {
+                    logger.debug(`[UIDiscovery] Could not load main class for ${component.name}:`, error);
+                }
+            }
+            
+            if (component.hasIpc) {
+                try {
+                    const ipcModulePath = path.join(uiBasePath, component.path, this.getIpcFileName(component.name));
+                    const ipcModule = await import(ipcModulePath);
+                    
+                    if (ipcModule.default && this.isValidIpcModule(ipcModule.default)) {
+                        app.ipcHandlers = ipcModule.default;
+                        logger.debug(`[UIDiscovery] Loaded IPC handlers for ${component.name}`);
+                    }
+                } catch (error) {
+                    logger.debug(`[UIDiscovery] Could not load IPC handlers for ${component.name}:`, error);
+                }
+            }
+            
+            // Store the component in the appropriate collection
+            if (app.type === 'platform') {
+                this.platformComponents.set(app.name, app);
+            } else if (app.type === 'widget') {
+                this.widgets.set(app.name, app);
+            } else {
+                this.applications.set(app.name, app);
+            }
+        }
+        
+        logger.info(`[UIDiscovery] Dynamic discovery complete: Platform=${this.platformComponents.size}, Apps=${this.applications.size}, Widgets=${this.widgets.size}`);
+    }
+
+    /**
+     * Scan the UI directory structure for components
+     */
+    private async scanUIDirectory(basePath: string): Promise<DiscoveredComponent[]> {
+        const components: DiscoveredComponent[] = [];
+        
+        try {
+            // Scan platform directory
+            const platformPath = path.join(basePath, 'platform');
+            if (fs.existsSync(platformPath)) {
+                const platformDirs = fs.readdirSync(platformPath, { withFileTypes: true })
+                    .filter(dirent => dirent.isDirectory())
+                    .map(dirent => dirent.name);
+                
+                for (const dir of platformDirs) {
+                    const component = await this.analyzeComponent(path.join('platform', dir), 'platform', basePath);
+                    if (component) components.push(component);
+                }
+            }
+            
+            // Scan apps directory
+            const appsPath = path.join(basePath, 'apps');
+            if (fs.existsSync(appsPath)) {
+                const appDirs = fs.readdirSync(appsPath, { withFileTypes: true })
+                    .filter(dirent => dirent.isDirectory())
+                    .map(dirent => dirent.name);
+                
+                for (const dir of appDirs) {
+                    const component = await this.analyzeComponent(path.join('apps', dir), 'app', basePath);
+                    if (component) components.push(component);
+                }
+            }
+            
+            // Scan widgets directory (if it exists)
+            const widgetsPath = path.join(basePath, 'widgets');
+            if (fs.existsSync(widgetsPath)) {
+                const widgetDirs = fs.readdirSync(widgetsPath, { withFileTypes: true })
+                    .filter(dirent => dirent.isDirectory())
+                    .map(dirent => dirent.name);
+                
+                for (const dir of widgetDirs) {
+                    const component = await this.analyzeComponent(path.join('widgets', dir), 'widget', basePath);
+                    if (component) components.push(component);
+                }
+            }
+            
+        } catch (error) {
+            logger.warn('[UIDiscovery] Error scanning UI directory:', error);
+        }
+        
+        return components;
+    }
+
+    /**
+     * Analyze a component directory to determine what files it has
+     */
+    private async analyzeComponent(relativePath: string, type: 'platform' | 'app' | 'widget', basePath: string): Promise<DiscoveredComponent | null> {
+        const fullPath = path.join(basePath, relativePath);
+        const componentName = path.basename(relativePath);
+        
+        try {
+            const files = fs.readdirSync(fullPath);
+            
+            const hasMain = files.some(file => 
+                file.endsWith('.main.ts') || file.endsWith('.main.js') ||
+                file === 'main.ts' || file === 'main.js'
+            );
+            
+            const hasIpc = files.some(file => 
+                file.endsWith('.ipc.ts') || file.endsWith('.ipc.js') ||
+                file === 'ipc.ts' || file === 'ipc.js'
+            );
+            
+            const hasPreload = files.some(file => 
+                file === 'preload.ts' || file === 'preload.js'
+            );
+            
+            // Only include components that have at least a main class or IPC handlers
+            if (hasMain || hasIpc) {
+                return {
+                    name: componentName,
+                    type,
+                    path: relativePath,
+                    hasMain,
+                    hasIpc,
+                    hasPreload
+                };
+            }
+            
+        } catch (error) {
+            logger.debug(`[UIDiscovery] Could not analyze component ${componentName}:`, error);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get the expected main file name for a component
+     */
+    private getMainFileName(componentName: string): string {
+        // Common patterns: component.main.ts, componentname.main.ts, main.ts
+        const patterns = [
+            `${componentName.toLowerCase()}.main.ts`,
+            `${componentName}.main.ts`,
+            'main.ts'
+        ];
+        
+        return patterns[0]; // Start with the most common pattern
+    }
+
+    /**
+     * Get the expected IPC file name for a component
+     */
+    private getIpcFileName(componentName: string): string {
+        // Common patterns: component.ipc.ts, componentname.ipc.ts, ipc.ts
+        const patterns = [
+            `${componentName.toLowerCase()}.ipc.ts`,
+            `${componentName}.ipc.ts`,
+            'ipc.ts'
+        ];
+        
+        return patterns[0]; // Start with the most common pattern
     }
 }
 

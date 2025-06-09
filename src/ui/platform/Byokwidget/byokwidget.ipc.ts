@@ -79,9 +79,18 @@ const ByokwidgetIpcHandlers: AppIpcModule = {
         // Get current configuration
         ipcMain.handle('byokwidget:get-config', async () => {
             try {
+                // Ensure configuration is loaded before accessing it
+                await config.load();
+                
                 const currentConfig = config.get();
                 const provider = currentConfig.provider.service;
                 const hasApiKey = await apiKeyManager.hasApiKey(provider);
+                
+                logger.debug('[BYOK-IPC] Current config values:', {
+                    provider: currentConfig.provider.service,
+                    model: currentConfig.provider.model,
+                    hasApiKey
+                });
                 
                 return {
                     success: true,
@@ -165,48 +174,27 @@ const ByokwidgetIpcHandlers: AppIpcModule = {
         // Get system status from agent (actual connection status)
         ipcMain.handle('byokwidget:get-status', async () => {
             try {
+                // Ensure configuration is loaded before accessing it
+                await config.load();
+                
                 const currentConfig = config.get();
                 const provider = currentConfig.provider.service;
                 const hasApiKey = await apiKeyManager.hasApiKey(provider);
-                const hasValidProvider = config.hasValidProvider();
+                const hasValidProvider = !!provider;
                 
-                logger.debug(`[BYOK-IPC] Status check - Provider: ${provider}, HasApiKey: ${hasApiKey}, HasValidProvider: ${hasValidProvider}`);
-                
-                // Get actual connection status from the agent (real LLM provider status)
                 let connectionStatus = 'unknown';
+                
+                // Get connection status from agent if available
                 try {
                     const { getAgentBridge } = await import('@core/platform/ipc/agent-bridge');
                     const agentBridge = getAgentBridge();
                     
                     if (agentBridge?.isReady()) {
-                        // Get the actual connection status from the agent's LLM provider
-                        const agentProviderInfo = agentBridge.getProviderInfo();
-                        
-                        // Cross-check: if agent provider doesn't match current config, use fallback logic
-                        if (agentProviderInfo.service !== provider) {
-                            logger.debug(`[BYOK-IPC] Agent provider mismatch: agent=${agentProviderInfo.service}, config=${provider}. Using fallback status.`);
-                            // Agent is still using old provider, use fallback logic based on current config
-                            if (provider === 'ollama') {
-                                connectionStatus = 'local';
-                            } else if (!hasApiKey) {
-                                connectionStatus = 'no-key';
-                            } else if (hasApiKey && hasValidProvider) {
-                                connectionStatus = 'configured';
-                            }
-                        } else if (agentProviderInfo && (agentProviderInfo as any).connectionStatus) {
-                            connectionStatus = (agentProviderInfo as any).connectionStatus;
-                            logger.debug(`[BYOK-IPC] Using agent connection status: ${connectionStatus}`);
+                        const athenaAgent = (agentBridge as any).athenaAgent;
+                        if (athenaAgent?.getConnectionStatus) {
+                            connectionStatus = athenaAgent.getConnectionStatus();
+                            logger.debug(`[BYOK-IPC] Got connection status from agent: ${connectionStatus}`);
                         }
-                    } else {
-                        // Agent not ready, use basic status
-                        if (provider === 'ollama') {
-                            connectionStatus = 'local';
-                        } else if (!hasApiKey) {
-                            connectionStatus = 'no-key';
-                        } else if (hasApiKey && hasValidProvider) {
-                            connectionStatus = 'configured';
-                        }
-                        logger.debug(`[BYOK-IPC] Agent not ready, using fallback status: ${connectionStatus}`);
                     }
                 } catch (error) {
                     logger.debug('[BYOK-IPC] Could not get agent status, using fallback');

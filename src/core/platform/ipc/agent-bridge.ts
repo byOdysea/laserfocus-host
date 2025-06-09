@@ -262,6 +262,44 @@ export class AgentBridge {
                 return;
             }
 
+            // Force reload configuration before validation to ensure fresh data
+            await this.athenaAgent.reloadConfigurationManually();
+            
+            // Check if agent has valid configuration before proceeding (using async version to check actual API keys)
+            if (!(await this.athenaAgent.hasValidConfigurationAsync())) {
+                const providerInfo = this.athenaAgent.getProviderInfo();
+                const errorMsg = providerInfo.service === 'ollama'
+                    ? "⚠️ Invalid Ollama configuration. Please check your model settings."
+                    : "⚠️ API key not found. Please set up your API key in settings.";
+                
+                logger.warn(`[AgentBridge] ${errorMsg}`);
+                
+                // Send user message first
+                this.statusHandler.sendUpdate({
+                    type: 'user',
+                    content: userInput
+                });
+
+                // Send streaming start signal
+                this.statusHandler.sendUpdate({
+                    type: 'agent-stream-start',
+                    content: ''
+                });
+
+                // Send error message through streaming system
+                const streamHandler = this.createStreamHandler();
+                streamHandler.sendChunk(errorMsg);
+                await streamHandler.finish();
+
+                // Send streaming end signal
+                this.statusHandler.sendUpdate({
+                    type: 'agent-stream-end',
+                    content: ''
+                });
+                
+                return;
+            }
+
             try {
                 // Send user message to conversation monitors
                 this.statusHandler.sendUpdate({

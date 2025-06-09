@@ -2,7 +2,7 @@ import * as logger from '@utils/logger';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { AppConfig, configSchema, createDefaultConfig } from './config';
+import { AppConfig, configSchema, createDefaultConfig, IS_DEV } from './config';
 
 export class ConfigurationManager {
   private static instance: ConfigurationManager | null = null;
@@ -27,7 +27,7 @@ export class ConfigurationManager {
       // Start with defaults (no API key)
       let config = createDefaultConfig();
 
-      if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === undefined) {
+      if (IS_DEV) {
         // Development: Environment variables for non-API config
         config = this.applyEnvironmentVariables(config);
         logger.info('[Config] Development mode: using environment variables (excluding API keys)');
@@ -44,6 +44,23 @@ export class ConfigurationManager {
           }
         } else {
           logger.info('[Config] No config file found, using defaults');
+          
+          // Load default MCP configuration when no config file exists
+          if (!config.integrations) {
+            config.integrations = { mcp: { enabled: false, servers: [] } };
+          } else if (!config.integrations.mcp) {
+            config.integrations.mcp = { enabled: false, servers: [] };
+          }
+          
+          if (config.integrations.mcp.servers.length === 0) {
+            const mcpFromFile = this.loadMCPConfigFromFile();
+            if (mcpFromFile && (mcpFromFile.enabled || mcpFromFile.servers?.length > 0)) {
+              config.integrations.mcp = mcpFromFile;
+              logger.info('[Config] Loaded default MCP configuration for first-time setup');
+              // Save the configuration so it persists
+              this.scheduleSaveMigration();
+            }
+          }
         }
       }
 
@@ -89,14 +106,14 @@ export class ConfigurationManager {
       envConfig.integrations.mcp = { enabled: false, servers: [] };
     }
 
-    // MCP Configuration - migrate from mcp.json if needed, then use main config
+    // MCP Configuration - load from mcp.json if needed, then use main config
     if (envConfig.integrations.mcp.servers.length === 0) {
-      // Try to migrate from mcp.json file for initial setup
+              // Try to load from mcp.json file for initial setup
       const mcpFromFile = this.loadMCPConfigFromFile();
       if (mcpFromFile && (mcpFromFile.enabled || mcpFromFile.servers?.length > 0)) {
         envConfig.integrations.mcp = mcpFromFile;
-        logger.info('[Config] Migrated MCP configuration from mcp.json to main config system');
-        // Save the migrated configuration so it persists
+        logger.info('[Config] Loaded MCP configuration from mcp.json');
+        // Save the configuration so it persists
         this.scheduleSaveMigration();
       }
     }
@@ -105,7 +122,7 @@ export class ConfigurationManager {
   }
 
   /**
-   * Schedule saving the migrated configuration (debounced)
+   * Schedule saving the configuration (debounced)
    */
   private scheduleSaveMigration() {
     if (this.migrationSaveTimeout) {
@@ -113,7 +130,7 @@ export class ConfigurationManager {
     }
     this.migrationSaveTimeout = setTimeout(() => {
       this.save().catch(error => {
-        logger.warn('[Config] Failed to save migrated configuration:', error);
+        logger.warn('[Config] Failed to save configuration:', error);
       });
     }, 1000); // 1 second debounce
   }
@@ -121,21 +138,83 @@ export class ConfigurationManager {
   private migrationSaveTimeout: NodeJS.Timeout | null = null;
 
   /**
-   * Load MCP configuration from mcp.json file (for migration only)
+   * Load default MCP configuration (bundled with app) or user's custom mcp.json
    */
   private loadMCPConfigFromFile() {
     try {
-      const mcpConfigPath = path.join(process.cwd(), 'mcp.json');
-      if (fs.existsSync(mcpConfigPath)) {
-        const mcpData = fs.readFileSync(mcpConfigPath, 'utf8');
-        const mcpConfig = JSON.parse(mcpData);
-        logger.info('[Config] Found mcp.json for migration');
-        return mcpConfig;
+      if (IS_DEV) {
+        // Development: Use the mcp.json in the repo root
+        const devMcpPath = path.join(process.cwd(), 'mcp.json');
+        if (fs.existsSync(devMcpPath)) {
+          const mcpData = fs.readFileSync(devMcpPath, 'utf8');
+          const mcpConfig = JSON.parse(mcpData);
+          logger.info(`[Config] Using development mcp.json from: ${devMcpPath}`);
+          return mcpConfig;
+        }
+      } else {
+        // Production: First check user's custom mcp.json, then fall back to bundled default
+        const userMcpPath = path.join(os.homedir(), '.laserfocus', 'mcp.json');
+        
+        if (fs.existsSync(userMcpPath)) {
+          try {
+            const mcpData = fs.readFileSync(userMcpPath, 'utf8');
+            const mcpConfig = JSON.parse(mcpData);
+            logger.info(`[Config] Using user's custom mcp.json from: ${userMcpPath}`);
+            return mcpConfig;
+          } catch (error) {
+            logger.warn(`[Config] User's mcp.json is corrupted, falling back to defaults:`, error);
+          }
+        }
+        
+        // Try to load bundled default mcp.json
+        const bundledMcpPaths = [
+          path.join(process.resourcesPath || '', 'mcp.json'),
+          path.join(process.resourcesPath || '', 'app', 'mcp.json'),
+          path.join(__dirname, '..', '..', '..', 'mcp.json'), // fallback for unbundled builds
+        ];
+        
+        for (const bundledMcpPath of bundledMcpPaths) {
+          try {
+            if (fs.existsSync(bundledMcpPath)) {
+              const mcpData = fs.readFileSync(bundledMcpPath, 'utf8');
+              const mcpConfig = JSON.parse(mcpData);
+              logger.info(`[Config] Using bundled default mcp.json from: ${bundledMcpPath}`);
+              
+              // Copy the default to user's config directory for future customization
+              this.copyDefaultMcpToUserConfig(mcpConfig, userMcpPath);
+              
+              return mcpConfig;
+            }
+          } catch (error) {
+            logger.debug(`[Config] Failed to read bundled mcp.json at ${bundledMcpPath}:`, error);
+          }
+        }
       }
+      
+      logger.debug('[Config] No mcp.json file found, using empty MCP configuration');
     } catch (error) {
-      logger.warn('[Config] Failed to read mcp.json for migration:', error);
+      logger.warn('[Config] Failed to load MCP configuration:', error);
     }
     return null;
+  }
+
+  /**
+   * Copy default MCP configuration to user's config directory
+   */
+  private copyDefaultMcpToUserConfig(mcpConfig: any, userMcpPath: string) {
+    try {
+      // Ensure the directory exists
+      const configDir = path.dirname(userMcpPath);
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      
+      // Write the default configuration as a starting point for the user
+      fs.writeFileSync(userMcpPath, JSON.stringify(mcpConfig, null, 2));
+      logger.info(`[Config] Copied default MCP configuration to: ${userMcpPath}`);
+    } catch (error) {
+      logger.warn(`[Config] Failed to copy default MCP configuration to user directory:`, error);
+    }
   }
 
   private mergeConfigs(base: AppConfig, saved: any): AppConfig {
@@ -143,13 +222,13 @@ export class ConfigurationManager {
     const baseIntegrations = base.integrations || { mcp: { enabled: false, servers: [] } };
     const savedIntegrations = saved.integrations || {};
     
-    // Migrate from mcp.json if saved config doesn't have MCP but file exists
+    // Load from mcp.json if saved config doesn't have MCP but file exists
     let mcpConfig = savedIntegrations.mcp;
     if (!mcpConfig || mcpConfig.servers?.length === 0) {
       const mcpFromFile = this.loadMCPConfigFromFile();
       if (mcpFromFile && (mcpFromFile.enabled || mcpFromFile.servers?.length > 0)) {
         mcpConfig = mcpFromFile;
-        logger.info('[Config] Migrated MCP configuration from mcp.json during config merge');
+        logger.info('[Config] Loaded MCP configuration from mcp.json during config merge');
       }
     }
     

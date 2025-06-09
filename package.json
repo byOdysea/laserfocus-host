@@ -40,16 +40,22 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "mcp.json"
     ],
     "mac": {
       "icon": "assets/1024x.icns",
       "target": [
         {
-          "target": "default",
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
           "arch": ["x64", "arm64"]
         }
-      ]
+      ],
+      "artifactName": "${productName}-${version}-${arch}-mac.${ext}"
     }
   },
   "dependencies": {
