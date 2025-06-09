@@ -210,7 +210,9 @@ export class UIDiscoveryService {
         } catch (error) {
             const appType = this.classifyAppType(appName);
             const basePath = appType === 'platform' ? 'platform' : 'apps';
-            return `${basePath}/${appName}`;
+            // Convert PascalCase app names to lowercase for file system paths
+            const lowercaseAppName = appName.toLowerCase();
+            return `${basePath}/${lowercaseAppName}`;
         }
     }
 
