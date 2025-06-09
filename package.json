@@ -10,7 +10,6 @@
     "start:prod": "NODE_ENV=production electron . --enable-logging",
     "dev": "NODE_ENV=development vite",
     "package-mac": "electron-builder --mac",
-    "build-alpha": "npm version prerelease --preid=alpha --no-git-tag-version && yarn build && yarn package-mac && git checkout package.json",
     "create-app": "tsx src/core/app-discovery/app-generator.ts"
   },
   "repository": "https://github.com/byOdysea/laserfocus.git",
@@ -44,7 +43,13 @@
       "electron/**/*"
     ],
     "mac": {
-      "icon": "assets/1024x.icns"
+      "icon": "assets/1024x.icns",
+      "target": [
+        {
+          "target": "default",
+          "arch": ["x64", "arm64"]
+        }
+      ]
     }
   },
   "dependencies": {
