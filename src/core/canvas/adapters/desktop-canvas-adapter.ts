@@ -70,7 +70,7 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
      * Initialize the desktop canvas
      */
     async initializeCanvas(): Promise<Canvas> {
-        // Start monitoring all desktop windows at 10Hz
+        // Start monitoring all desktop windows at 1Hz
         this.startDesktopMonitoring();
         
         // Capture initial state
@@ -102,7 +102,9 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
      * Create a browser window element
      */
     private async createBrowserWindow(params: CreateElementParams): Promise<CanvasElement> {
-        const elementId = `element-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+        // Generate predictable IDs that LLMs can work with
+        const elementIndex = this.canvas.elements.length;
+        const elementId = `element-${elementIndex}`;
         
         // Extract transform and content information - agent MUST provide all positioning
         if (!params.transform?.position?.coordinates || !params.transform?.size?.dimensions) {
@@ -153,8 +155,8 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
             await window.loadURL(normalizedUrl);
             logger.debug(`[DesktopAdapter] Successfully loaded URL: ${normalizedUrl}`);
             
-            // Force show the window after successful load
-            logger.debug(`[DesktopAdapter] Forcing window to show for ${normalizedUrl}`);
+            // Show window once after successful load
+            logger.debug(`[DesktopAdapter] Showing window for ${normalizedUrl}`);
             window.show();
             window.focus();
             
@@ -163,27 +165,14 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
             throw error;
         }
         
-        // Multiple fallback approaches for window visibility
-        window.once('ready-to-show', () => {
-            logger.debug(`[DesktopAdapter] ready-to-show event fired for ${normalizedUrl}`);
-            if (!window.isVisible()) {
-                logger.debug(`[DesktopAdapter] Window not visible, showing now`);
+        // Single visibility check after a delay
+        setTimeout(() => {
+            if (!window.isDestroyed() && !window.isVisible()) {
+                logger.debug(`[DesktopAdapter] Window still not visible, forcing show`);
                 window.show();
                 window.focus();
             }
-        });
-
-        // Additional fallback using did-finish-load event
-        window.webContents.once('did-finish-load', () => {
-            logger.debug(`[DesktopAdapter] did-finish-load event fired for ${normalizedUrl}`);
-            setTimeout(() => {
-                if (!window.isVisible()) {
-                    logger.debug(`[DesktopAdapter] Window still not visible after load, forcing show`);
-                    window.show();
-                    window.focus();
-                }
-            }, 100);
-        });
+        }, 500);
 
         // Add debugging for window state
         setTimeout(() => {
@@ -224,6 +213,8 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
             metadata: {
                 title: 'Loading...',
                 elementType: params.type,
+                createdAt: Date.now(),
+                managedByEngine: true,
                 ...params.metadata
             },
             canvasType: 'desktop'
@@ -335,6 +326,8 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
                 elementType: params.type,
                 componentName: parsedUri.componentName,
                 componentType: parsedUri.scheme,
+                createdAt: Date.now(),
+                managedByEngine: true,
                 ...params.metadata
             },
             canvasType: 'desktop'
@@ -482,12 +475,12 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
     }
 
     /**
-     * Start monitoring all desktop windows at 10Hz
+     * Start monitoring all desktop windows at 1Hz (reduced from 10Hz for performance)
      */
     private startDesktopMonitoring(): void {
         this.monitoringInterval = setInterval(async () => {
             await this.updateDesktopState();
-        }, 100); // 10Hz
+        }, 1000); // 1Hz - reduced from 100ms to save CPU
     }
 
     /**
