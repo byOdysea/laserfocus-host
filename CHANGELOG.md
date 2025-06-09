@@ -5,6 +5,26 @@ All notable changes to LaserFocus will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.4] - 2024-12-29
+
+### 🚀 First Alpha Release
+- **MCP (Model Context Protocol) Integration**: Complete implementation of MCP server management
+  - Real-time server status monitoring and control
+  - Automatic server discovery and connection handling
+  - Settings UI with live status updates and toggle controls
+  - Robust error handling and connection state management
+- **Improved Streaming Consistency**: Enhanced real-time updates across all UI components
+- **Enhanced System Stability**: Performance optimizations and memory leak prevention
+- **Production Ready**: First version ready for alpha testing with external users
+
+### 🛠 Technical Improvements
+- **Real-time MCP Status Updates**: Polling system for live server status reflection
+- **Event-driven Architecture**: Improved IPC communication for smoother user experience
+- **Settings UI Polish**: Professional interface for MCP server management
+- **Build Process**: Refined packaging system for alpha distribution
+
+---
+
 ## [0.0.3] - 2024-12-28
 
 ### 🎉 Major Features Added
