@@ -16,7 +16,7 @@ export interface ToolStatusCallback {
 }
 
 export interface ConversationUpdate {
-    type: 'user' | 'agent' | 'agent-stream' | 'agent-stream-start' | 'agent-stream-end' | 'tool-call' | 'tool-status' | 'agent-stream-error';
+    type: 'user' | 'agent' | 'agent-stream' | 'agent-stream-start' | 'agent-stream-end' | 'agent-thinking' | 'tool-call' | 'tool-status' | 'agent-stream-error';
     content: string;
     timestamp?: string;
     status?: ToolStatus;

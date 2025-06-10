@@ -24,4 +24,16 @@ export interface AppIpcModule {
         appInstance: any, // Type this more specifically if possible per app, or use a base class/interface
         allAppInstances?: AppMainProcessInstances
     ) => void;
+
+    /**
+     * Unregisters IPC event handlers specific to this app module.
+     * This is crucial for cleanup when an app's window is closed to prevent memory leaks
+     * and errors from lingering handlers.
+     * @param ipcMain - The Electron IpcMain instance to unregister handlers from.
+     * @param appInstance - The main process instance of this specific app.
+     */
+    unregisterMainProcessHandlers?: (
+        ipcMain: IpcMain,
+        appInstance: any
+    ) => void;
 }

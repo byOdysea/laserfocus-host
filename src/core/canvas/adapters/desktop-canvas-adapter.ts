@@ -19,6 +19,14 @@ import { BrowserWindow, screen } from 'electron';
 import { ConfigurationManager } from '../../infrastructure/config/configuration-manager';
 import { getUIDiscoveryService } from '../../platform/discovery/main-process-discovery';
 
+function toPascalCase(str: string): string {
+    if (!str) return '';
+    return str
+        .split(/[-_\s]+/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join('');
+}
+
 export class DesktopCanvasAdapter implements CanvasAdapter {
     readonly canvasType = 'desktop';
     
@@ -248,38 +256,19 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         height: number, 
         contentSource: string
     ): Promise<CanvasElement> {
-        const parsedUri = this.parseUIComponentUri(contentSource);
-        
-        // Get the UI discovery service singleton
-        const uiDiscoveryService = getUIDiscoveryService();
-        
-        if (!uiDiscoveryService) {
+        const uiDiscovery = getUIDiscoveryService();
+        if (!uiDiscovery) {
             throw new Error('UI Discovery Service not available');
         }
+
+        const parsedUri = this.parseUIComponentUri(contentSource);
+        const componentName = toPascalCase(parsedUri.componentName);
         
-        // Check if the component exists in the registry
-        const availableApps = uiDiscoveryService.getAllApps();
-        const componentExists = availableApps.includes(parsedUri.componentName);
-        
-        if (!componentExists) {
-            throw new Error(`Component "${parsedUri.componentName}" not found. Available: ${availableApps.join(', ')}`);
-        }
-        
-        // For platform components, check if already running and focus instead
-        if (parsedUri.scheme === 'platform') {
-            const instance = uiDiscoveryService.getAppInstance(parsedUri.componentName);
-            if (instance && instance.window && !instance.window.isDestroyed()) {
-                // Focus existing platform component instead of creating new one
-                instance.window.focus();
-                throw new Error(`Platform component "${parsedUri.componentName}" is already running. Focused existing instance.`);
-            }
-        }
-        
-        // Initialize the UI component - this creates the window
-        const appModule = await uiDiscoveryService.initializeUIWindow(parsedUri.componentName);
-        
+        logger.debug(`[DesktopAdapter] Creating internal UI component: ${componentName}`);
+
+        const appModule = await uiDiscovery.initializeUIWindow(componentName);
         if (!appModule || !appModule.instance || !appModule.instance.window) {
-            throw new Error(`Failed to initialize ${parsedUri.scheme} component: ${parsedUri.componentName}`);
+            throw new Error(`Failed to initialize UI component: ${componentName}`);
         }
         
         const componentWindow = appModule.instance.window;
@@ -317,14 +306,14 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
                 type: 'component',
                 source: contentSource,
                 metadata: {
-                    componentName: parsedUri.componentName,
+                    componentName: componentName,
                     componentType: parsedUri.scheme
                 }
             },
             metadata: {
-                title: parsedUri.componentName,
+                title: componentName,
                 elementType: params.type,
-                componentName: parsedUri.componentName,
+                componentName: componentName,
                 componentType: parsedUri.scheme,
                 createdAt: Date.now(),
                 managedByEngine: true,

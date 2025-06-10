@@ -40,8 +40,7 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
-      "mcp.json"
+      "electron/**/*"
     ],
     "mac": {
       "icon": "assets/1024x.icns",

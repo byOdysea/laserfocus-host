@@ -2,6 +2,7 @@ import * as logger from '@utils/logger';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import defaultMcpConfig from '../../../../mcp.json';
 import { AppConfig, configSchema, createDefaultConfig, IS_DEV } from './config';
 
 export class ConfigurationManager {
@@ -143,59 +144,49 @@ export class ConfigurationManager {
   private loadMCPConfigFromFile() {
     try {
       if (IS_DEV) {
-        // Development: Use the mcp.json in the repo root
+        // Development: Use the mcp.json in the repo root for hot-reloading.
         const devMcpPath = path.join(process.cwd(), 'mcp.json');
         if (fs.existsSync(devMcpPath)) {
-          const mcpData = fs.readFileSync(devMcpPath, 'utf8');
-          const mcpConfig = JSON.parse(mcpData);
-          logger.info(`[Config] Using development mcp.json from: ${devMcpPath}`);
-          return mcpConfig;
+          try {
+            const mcpData = fs.readFileSync(devMcpPath, 'utf8');
+            logger.info(`[Config] Using development mcp.json from: ${devMcpPath}`);
+            return JSON.parse(mcpData);
+          } catch (error) {
+            logger.warn(`[Config] Development mcp.json is corrupted, falling back to imported default:`, error);
+            // Fallback to imported default if dev file is broken
+            return defaultMcpConfig;
+          }
+        } else {
+          // If no mcp.json in dev, use the imported one.
+          logger.info(`[Config] Using imported default MCP configuration (dev mode)`);
+          return defaultMcpConfig;
         }
       } else {
-        // Production: First check user's custom mcp.json, then fall back to bundled default
+        // Production: Always use the user's config file.
         const userMcpPath = path.join(os.homedir(), '.laserfocus', 'mcp.json');
-        
-        if (fs.existsSync(userMcpPath)) {
-          try {
-            const mcpData = fs.readFileSync(userMcpPath, 'utf8');
-            const mcpConfig = JSON.parse(mcpData);
-            logger.info(`[Config] Using user's custom mcp.json from: ${userMcpPath}`);
-            return mcpConfig;
-          } catch (error) {
-            logger.warn(`[Config] User's mcp.json is corrupted, falling back to defaults:`, error);
-          }
+
+        if (!fs.existsSync(userMcpPath)) {
+          // If it doesn't exist, create it with the imported defaults.
+          logger.info(`[Config] No user MCP config found. Creating default at: ${userMcpPath}`);
+          this.copyDefaultMcpToUserConfig(defaultMcpConfig, userMcpPath);
         }
-        
-        // Try to load bundled default mcp.json
-        const bundledMcpPaths = [
-          path.join(process.resourcesPath || '', 'mcp.json'),
-          path.join(process.resourcesPath || '', 'app', 'mcp.json'),
-          path.join(__dirname, '..', '..', '..', 'mcp.json'), // fallback for unbundled builds
-        ];
-        
-        for (const bundledMcpPath of bundledMcpPaths) {
-          try {
-            if (fs.existsSync(bundledMcpPath)) {
-              const mcpData = fs.readFileSync(bundledMcpPath, 'utf8');
-              const mcpConfig = JSON.parse(mcpData);
-              logger.info(`[Config] Using bundled default mcp.json from: ${bundledMcpPath}`);
-              
-              // Copy the default to user's config directory for future customization
-              this.copyDefaultMcpToUserConfig(mcpConfig, userMcpPath);
-              
-              return mcpConfig;
-            }
-          } catch (error) {
-            logger.debug(`[Config] Failed to read bundled mcp.json at ${bundledMcpPath}:`, error);
-          }
+
+        // Now, always load from the user's config file.
+        try {
+          const mcpData = fs.readFileSync(userMcpPath, 'utf8');
+          logger.info(`[Config] Loaded MCP configuration from: ${userMcpPath}`);
+          return JSON.parse(mcpData);
+        } catch (error) {
+          logger.error(`[Config] User's mcp.json is corrupted. Recreating with defaults:`, error);
+          // If file is corrupted, recreate it and return the defaults for this session.
+          this.copyDefaultMcpToUserConfig(defaultMcpConfig, userMcpPath);
+          return defaultMcpConfig;
         }
       }
-      
-      logger.debug('[Config] No mcp.json file found, using empty MCP configuration');
     } catch (error) {
-      logger.warn('[Config] Failed to load MCP configuration:', error);
+      logger.warn('[Config] Critical error in loadMCPConfigFromFile. Returning null.', error);
+      return null;
     }
-    return null;
   }
 
   /**

@@ -11,7 +11,7 @@ import { IpcMain } from 'electron';
 // No more API key testing - let the LLM factory handle validation when actually used
 
 const ByokwidgetIpcHandlers: AppIpcModule = {
-    moduleId: 'byokwidget',
+    moduleId: 'Byokwidget',
     
     registerMainProcessHandlers: (
         ipcMain: IpcMain,
@@ -79,10 +79,8 @@ const ByokwidgetIpcHandlers: AppIpcModule = {
         // Get current configuration
         ipcMain.handle('byokwidget:get-config', async () => {
             try {
-                // Force configuration reload to ensure we get the latest changes
-                logger.debug('[BYOK-IPC] Forcing configuration reload before read...');
-                await config.load();
-                
+                // Use existing configuration instead of forcing reload
+                // Configuration changes are handled automatically by ConfigurableComponent
                 const currentConfig = config.get();
                 const provider = currentConfig.provider.service;
                 const hasApiKey = await apiKeyManager.hasApiKey(provider);
@@ -109,26 +107,6 @@ const ByokwidgetIpcHandlers: AppIpcModule = {
             } catch (error) {
                 logger.error('[BYOK-IPC] Error getting config:', error);
                 return { success: false, error: 'Failed to get configuration' };
-            }
-        });
-
-        // Force configuration refresh (useful for debugging and production)
-        ipcMain.handle('byokwidget:force-config-refresh', async () => {
-            try {
-                logger.info('[BYOK-IPC] Force configuration refresh requested');
-                await config.load();
-                
-                // Trigger change callbacks to notify all components
-                const currentConfig = config.get();
-                logger.info('[BYOK-IPC] Configuration refreshed:', {
-                    provider: currentConfig.provider.service,
-                    model: currentConfig.provider.model
-                });
-                
-                return { success: true };
-            } catch (error) {
-                logger.error('[BYOK-IPC] Error force refreshing config:', error);
-                return { success: false, error: 'Failed to refresh configuration' };
             }
         });
 
@@ -196,9 +174,6 @@ const ByokwidgetIpcHandlers: AppIpcModule = {
         // Get system status from agent (actual connection status)
         ipcMain.handle('byokwidget:get-status', async () => {
             try {
-                // Ensure configuration is loaded before accessing it
-                await config.load();
-                
                 const currentConfig = config.get();
                 const provider = currentConfig.provider.service;
                 const hasApiKey = await apiKeyManager.hasApiKey(provider);

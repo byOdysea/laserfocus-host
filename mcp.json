@@ -12,18 +12,6 @@
       }
     },
     {
-      "name": "github",
-      "description": "GitHub repository integration",
-      "enabled": false,
-      "stdio": {
-        "executor": "npx",
-        "command": "@modelcontextprotocol/server-github",
-        "env": {
-          "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-        }
-      }
-    },
-    {
       "name": "memory",
       "description": "Persistent memory and knowledge management",
       "enabled": false,
@@ -45,16 +33,6 @@
       }
     },
     {
-      "name": "everything-server",
-      "description": "Comprehensive test server with all MCP features",
-      "enabled": false,
-      "stdio": {
-        "executor": "docker",
-        "command": "modelcontextprotocol/server-everything:latest",
-        "dockerImage": "modelcontextprotocol/server-everything:latest"
-      }
-    },
-    {
       "name": "postgres",
       "description": "PostgreSQL database access",
       "enabled": false,
@@ -68,21 +46,6 @@
       },
       "toolFilters": {
         "blockedTools": ["execute_write", "drop_table", "truncate"]
-      }
-    },
-    {
-      "name": "remote-api",
-      "description": "Remote MCP server with OAuth authentication",
-      "transport": "streamableHttp",
-      "enabled": false,
-      "streamableHttp": {
-        "url": "https://api.example.com/mcp/streamable",
-        "auth": {
-          "type": "oauth2.1",
-          "clientId": "${OAUTH_CLIENT_ID}",
-          "clientSecret": "${OAUTH_CLIENT_SECRET}",
-          "tokenUrl": "https://api.example.com/oauth/token"
-        }
       }
     }
   ]

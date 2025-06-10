@@ -44,32 +44,12 @@ export const ByokwidgetApp: React.FC = () => {
             loadInitialState();
         };
 
-        // Listen for focus events (when the window comes back into focus)
-        const handleFocus = () => {
-            console.log('[Byokwidget] Window focus detected, reloading config...');
-            // Reload config when window regains focus to catch any changes
-            loadInitialState();
-        };
-
-        // Periodic check for configuration changes (especially useful in production)
-        const periodicCheck = () => {
-            console.log('[Byokwidget] Periodic config check...');
-            loadInitialState();
-        };
-
-        // More frequent polling in production builds to ensure config changes are caught
-        const pollInterval = process.env.NODE_ENV === 'production' ? 3000 : 10000; // 3s in prod, 10s in dev
-        const intervalId = setInterval(periodicCheck, pollInterval);
-
-        window.addEventListener('focus', handleFocus);
-        
-        // Custom event listener for configuration changes
+        // ✅ KEEP: Event-driven config updates from ConfigurationManager
         window.addEventListener('config-updated', handleConfigChange);
 
         return () => {
-            window.removeEventListener('focus', handleFocus);
+            // ✅ KEEP: Event cleanup
             window.removeEventListener('config-updated', handleConfigChange);
-            clearInterval(intervalId);
         };
     }, []);
 
@@ -90,11 +70,12 @@ export const ByokwidgetApp: React.FC = () => {
             console.log('[Byokwidget] Loading initial state...');
             console.log('[Byokwidget] Environment:', process.env.NODE_ENV);
             
-            // In production, force a config refresh to ensure we get the latest changes
-            if (process.env.NODE_ENV === 'production') {
-                console.log('[Byokwidget] Production mode: forcing config refresh...');
-                await window.byokwidgetAPI.forceConfigRefresh();
-            }
+            // Skip force config refresh - causes redundant loading on first request
+            // Configuration changes are handled automatically by ConfigurableComponent
+            // if (process.env.NODE_ENV === 'production') {
+            //     console.log('[Byokwidget] Production mode: forcing config refresh...');
+            //     await window.byokwidgetAPI.forceConfigRefresh();
+            // }
             
             const [configResult, apiKeyResult] = await Promise.all([
                 window.byokwidgetAPI.getConfig(),

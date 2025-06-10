@@ -1,15 +1,26 @@
 import { AppIpcModule, AppMainProcessInstances } from '@core/platform/ipc/types';
 import * as logger from '@utils/logger';
-import { Display } from 'electron';
+import { BrowserWindow, Display } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+
+export interface AppModuleInstance {
+    window?: BrowserWindow;
+    init?: () => void;
+}
+
+export type AppModuleConstructor = new (
+    primaryDisplay: Display,
+    viteDevServerUrl: string | undefined,
+    preloadPath: string
+) => AppModuleInstance;
 
 interface AppModule {
     name: string;
     type: 'platform' | 'app' | 'widget';
-    mainClass?: any;
+    mainClass?: AppModuleConstructor;
     ipcHandlers?: AppIpcModule;
-    instance?: any;
+    instance?: AppModuleInstance;
     fullPath: string;
     actualPath: string; // File system path
 }
@@ -22,8 +33,8 @@ interface UIDiscoveryConfig {
 }
 
 interface UIComponentRegistry {
-    mainClasses: Map<string, any>;
-    ipcModules: Map<string, any>;
+    mainClasses: Map<string, AppModuleConstructor>;
+    ipcModules: Map<string, AppIpcModule>;
 }
 
 interface DiscoveredComponent {
@@ -72,7 +83,7 @@ export class UIDiscoveryService {
             // Check if the existing instance's window is destroyed
             if (app.instance.window && app.instance.window.isDestroyed()) {
                 logger.info(`[UIDiscovery] UI Window ${windowName} instance exists but window is destroyed - clearing instance`);
-                app.instance = null;
+                app.instance = undefined;
             } else {
                 logger.info(`[UIDiscovery] UI Window ${windowName} already initialized`);
                 return app;
@@ -108,8 +119,17 @@ export class UIDiscoveryService {
                     appInstances.set(moduleId, instance);
                     
                     // Register the IPC handlers for this app
-                    app.ipcHandlers.registerMainProcessHandlers(ipcMain, instance, appInstances);
+                    const ipcModule = app.ipcHandlers;
+                    ipcModule.registerMainProcessHandlers(ipcMain, instance, appInstances);
                     logger.info(`[UIDiscovery] Registered IPC handlers for dynamically created ${app.type}: ${windowName}`);
+
+                    // Add a listener to unregister handlers when the window is closed
+                    if (instance.window && ipcModule.unregisterMainProcessHandlers) {
+                        instance.window.on('closed', () => {
+                            ipcModule.unregisterMainProcessHandlers!(ipcMain, instance);
+                            logger.info(`[UIDiscovery] Unregistered IPC handlers for ${app.type}: ${windowName}`);
+                        });
+                    }
                 }
                 
                 return app;
@@ -310,54 +330,50 @@ export class UIDiscoveryService {
         const appInstances: AppMainProcessInstances = new Map();
         const appModules: AppIpcModule[] = [];
         
-        for (const [appName, app] of this.platformComponents) {
+        this.platformComponents.forEach((app, name) => {
             if (app.instance) {
-                // Store instances using the same key as the IPC module's moduleId
-                const moduleId = app.ipcHandlers?.moduleId || appName;
-                appInstances.set(moduleId, app.instance);
+                appInstances.set(name, app.instance);
             }
-            
             if (app.ipcHandlers) {
                 appModules.push(app.ipcHandlers);
             }
-        }
-        
-        for (const [appName, app] of this.applications) {
+        });
+
+        this.applications.forEach((app, name) => {
             if (app.instance) {
-                // Store instances using the same key as the IPC module's moduleId
-                const moduleId = app.ipcHandlers?.moduleId || appName;
-                appInstances.set(moduleId, app.instance);
+                appInstances.set(name, app.instance);
             }
-            
             if (app.ipcHandlers) {
                 appModules.push(app.ipcHandlers);
             }
-        }
-        
-        for (const [appName, app] of this.widgets) {
+        });
+
+        this.widgets.forEach((app, name) => {
             if (app.instance) {
-                // Store instances using the same key as the IPC module's moduleId
-                const moduleId = app.ipcHandlers?.moduleId || appName;
-                appInstances.set(moduleId, app.instance);
+                appInstances.set(name, app.instance);
             }
-            
             if (app.ipcHandlers) {
                 appModules.push(app.ipcHandlers);
             }
-        }
+        });
         
         return { appInstances, appModules };
     }
 
-    getAppInstance(appName: string): any {
-        const app = this.platformComponents.get(appName) || this.applications.get(appName) || this.widgets.get(appName);
+    getAppInstance(appName: string): AppModuleInstance | undefined {
+        const app =
+            this.applications.get(appName) ||
+            this.widgets.get(appName) ||
+            this.platformComponents.get(appName);
+        
         return app?.instance;
     }
 
     getAllApps(): string[] {
-        return Array.from(this.platformComponents.keys())
-            .concat(Array.from(this.applications.keys()))
-            .concat(Array.from(this.widgets.keys()));
+        const apps = Array.from(this.applications.keys());
+        const widgets = Array.from(this.widgets.keys());
+        const platform = Array.from(this.platformComponents.keys());
+        return [...apps, ...widgets, ...platform];
     }
 
     /**
@@ -424,7 +440,7 @@ export class UIDiscoveryService {
                     // Find the main class (usually ends with 'Window')
                     for (const [key, value] of Object.entries(mainModule)) {
                         if (typeof value === 'function' && (key.includes('Window') || key.includes(component.name))) {
-                            app.mainClass = value;
+                            app.mainClass = value as AppModuleConstructor;
                             logger.debug(`[UIDiscovery] Loaded main class for ${component.name}: ${key}`);
                             break;
                         }

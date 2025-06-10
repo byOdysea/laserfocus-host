@@ -56,17 +56,45 @@ const cleanupConversationUpdateListener = window.electronAPI.ipcRendererOn('conv
         conversationLog.appendChild(logLine);
         conversationLog.scrollTop = conversationLog.scrollHeight;
         
-    } else if (type === 'agent-stream-start') {
-        // Start of agent streaming
+    } else if (type === 'agent-thinking') {
+        // Thinking indicator
         const logLine = document.createElement('div');
-        logLine.className = 'log-line agent streaming';
-        logLine.innerHTML = `<span class="prefix">Athena></span> <span class="content"></span><span class="typing-indicator">⚡</span>`;
+        logLine.className = 'log-line agent thinking';
+        logLine.innerHTML = `<span class="prefix">Athena></span> <span class="content"></span><span class="thinking-indicator">💭 ${content}</span>`;
         conversationLog.appendChild(logLine);
         conversationLog.scrollTop = conversationLog.scrollHeight;
         
-        // Store references for streaming updates
+        // Store references for potential conversion to streaming
         currentStreamingElement = logLine;
         streamingContentElement = logLine.querySelector('.content');
+        
+    } else if (type === 'agent-stream-start') {
+        // Start of agent streaming - either new line or transition from thinking
+        if (currentStreamingElement && currentStreamingElement.classList.contains('thinking')) {
+            // Convert thinking line to streaming
+            const thinkingIndicator = currentStreamingElement.querySelector('.thinking-indicator');
+            if (thinkingIndicator) {
+                thinkingIndicator.remove();
+            }
+            currentStreamingElement.classList.remove('thinking');
+            currentStreamingElement.classList.add('streaming');
+            // Add typing indicator
+            const typingIndicator = document.createElement('span');
+            typingIndicator.className = 'typing-indicator';
+            typingIndicator.textContent = '⚡';
+            currentStreamingElement.appendChild(typingIndicator);
+        } else {
+            // Create new streaming line (fallback case)
+            const logLine = document.createElement('div');
+            logLine.className = 'log-line agent streaming';
+            logLine.innerHTML = `<span class="prefix">Athena></span> <span class="content"></span><span class="typing-indicator">⚡</span>`;
+            conversationLog.appendChild(logLine);
+            conversationLog.scrollTop = conversationLog.scrollHeight;
+            
+            // Store references for streaming updates
+            currentStreamingElement = logLine;
+            streamingContentElement = logLine.querySelector('.content');
+        }
         
     } else if (type === 'agent-stream') {
         // Streaming content chunk
@@ -160,14 +188,18 @@ const cleanupConversationUpdateListener = window.electronAPI.ipcRendererOn('conv
         if (currentStreamingElement && streamingContentElement) {
             streamingContentElement.textContent = content;
             
-            // Remove typing indicator
+            // Remove thinking or typing indicator
+            const thinkingIndicator = currentStreamingElement.querySelector('.thinking-indicator');
             const typingIndicator = currentStreamingElement.querySelector('.typing-indicator');
+            if (thinkingIndicator) {
+                thinkingIndicator.remove();
+            }
             if (typingIndicator) {
                 typingIndicator.remove();
             }
             
-            // Remove streaming class and add error class
-            currentStreamingElement.classList.remove('streaming');
+            // Remove streaming/thinking class and add error class
+            currentStreamingElement.classList.remove('streaming', 'thinking');
             currentStreamingElement.classList.add('error');
         } else {
             // Create new error message if no streaming element exists
@@ -203,5 +235,13 @@ const cleanupUpdateListener = window.electronAPI.ipcRendererOn('update-content',
     const displayElement = document.getElementById('content-display');
     if (displayElement) {
         displayElement.textContent = `${type}: ${content}`;
+    }
+});
+
+// Signal to the main process that the widget is ready to receive messages
+window.addEventListener('DOMContentLoaded', () => {
+    (window as any).electronAPI.ipcRendererSend('athena-widget-ready');
+    if (process.env.NODE_ENV === 'development') {
+        console.debug('AthenaWidget: Sent athena-widget-ready signal.');
     }
 });

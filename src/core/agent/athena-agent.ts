@@ -6,12 +6,14 @@
  * Supports multiple LLM providers with hot configuration reloading
  */
 
+import { Canvas } from '@/lib/types/canvas';
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { END, MemorySaver, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import logger from '@utils/logger';
+import { createHash } from 'crypto';
 import { CanvasEngine } from '../canvas/canvas-engine';
 import { apiKeyManager } from "../infrastructure/config/api-key-manager";
 import { DEFAULT_MODEL_NAME, ProviderConfig } from '../infrastructure/config/config';
@@ -19,10 +21,9 @@ import { ConfigurableComponent } from '../infrastructure/config/configurable-com
 import { ConfigurationManager } from "../infrastructure/config/configuration-manager";
 import { LLMProviderFactory } from '../integrations/llm/providers/llm-provider-factory';
 import { MCPManager } from '../integrations/mcp/mcp-manager';
-import { getCanvasStateParser } from "./prompts/canvas-state-parser";
+import { getCanvasStateParser } from './prompts/canvas-state-parser';
 import { buildCoreSystemPrompt, buildMCPSummary } from "./prompts/core-system";
 import { buildPlatformComponentsDescription } from "./prompts/layout-calculations";
-import { getSystemPromptCache } from "./prompts/system-prompt-cache";
 import { buildUIComponentsSummary } from "./prompts/ui-components";
 import { ToolStatusCallback } from './types/tool-status';
 
@@ -41,7 +42,7 @@ interface AthenaAgentDependencies {
  * Interface for system prompt building strategy
  */
 interface SystemPromptBuilder {
-    buildPrompt(canvas: any, providerConfig: ProviderConfig, threadId?: string): Promise<string>;
+    buildPrompt(canvas: Canvas, providerConfig: ProviderConfig, threadId?: string): Promise<string>;
 }
 
 /**
@@ -51,6 +52,7 @@ interface WorkflowManager {
     createWorkflow(llm: BaseChatModel, tools: DynamicStructuredTool[], statusCallback?: ToolStatusCallback): any;
     processMessage(workflow: any, message: string, config: any): Promise<string>;
     streamMessage(workflow: any, message: string, config: any, onChunk: (chunk: string) => void): Promise<string>;
+    getMetricsSnapshot(): any;
 }
 
 export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
@@ -97,7 +99,7 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
         this.llmFactory = dependencies?.llmFactory || LLMProviderFactory;
         this.statusCallback = dependencies?.statusCallback;
         this.mcpManager = dependencies?.mcpManager || new MCPManager();
-        this.systemPromptBuilder = dependencies?.systemPromptBuilder || new DefaultSystemPromptBuilder();
+        this.systemPromptBuilder = dependencies?.systemPromptBuilder || new DefaultSystemPromptBuilder(this.mcpManager);
         this.workflowManager = new LangGraphWorkflowManager(
             this.statusCallback, 
             this.canvasEngine, 
@@ -324,8 +326,9 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
             return this.getNotReadyMessage();
         }
 
-        // Check for configuration changes before processing
-        await this.reloadConfiguration();
+        // Only reload configuration if needed (ConfigurableComponent handles automatic updates)
+        // This avoids redundant config loading on every request
+        // await this.reloadConfiguration();
 
         try {
             const config = { configurable: { thread_id: this.threadId } };
@@ -402,10 +405,8 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
         if (this.initialized) {
             logger.debug('[Athena] Refreshing agent tools...');
             try {
-                // Force reload configuration first to pick up changes
-                await this.reloadConfiguration();
-                
-                // Also ensure MCP manager has latest configuration
+                // ✅ UPDATED: ConfigurableComponent automatically handles config changes
+                // Also ensure MCP manager has latest configuration via its own ConfigurableComponent
                 const configManager = ConfigurationManager.getInstance();
                 const fullConfig = configManager.get();
                 if (fullConfig.integrations?.mcp) {
@@ -426,14 +427,14 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     /**
      * Get canvas state for external inspection
      */
-    async getCanvasState(): Promise<any> {
-        return await this.canvasEngine.getCanvas();
+    async getCanvasState(): Promise<Canvas> {
+        return this.canvasEngine.getCanvas();
     }
     
     /**
      * Monitor canvas changes
      */
-    monitorCanvas(callback: (canvas: any) => void): void {
+    monitorCanvas(callback: (canvas: Canvas) => void): void {
         this.canvasEngine.monitorChanges(callback);
     }
     
@@ -530,10 +531,14 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     }
     
     async destroy(): Promise<void> {
-        // Clean up MCP event listeners first
         if (this.mcpEventCleanup) {
             this.mcpEventCleanup();
             this.mcpEventCleanup = null;
+        }
+        
+        // Stop metrics reporting if using LangGraphWorkflowManager
+        if (this.workflowManager && typeof (this.workflowManager as any).stopMetricsReporting === 'function') {
+            (this.workflowManager as any).stopMetricsReporting();
         }
         
         super.destroy();
@@ -546,46 +551,18 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     }
 
     /**
+     * Get performance metrics snapshot for monitoring and debugging
+     */
+    getPerformanceMetrics(): any {
+        return this.workflowManager.getMetricsSnapshot();
+    }
+
+    /**
      * Build ultra-efficient system prompt using consolidated approach
      * Now uses centralized parsing to prevent duplication
      */
-    async buildEfficientSystemPrompt(canvas: any, providerConfig: ProviderConfig): Promise<string> {
-        // Use centralized parser to get all data at once
-        const parser = getCanvasStateParser();
-        const parsedState = await parser.getParsedState(canvas);
-        
-        // Get platform components description
-        const platformComponents = buildPlatformComponentsDescription(
-            parsedState.workArea, 
-            parsedState.layoutCalculations
-        );
-        
-        // Get MCP tools summary
-        const mcpTools = this.mcpManager.getTools();
-        const mcpServers = this.mcpManager.getConnectedServers();
-        const mcpSummary = buildMCPSummary(mcpTools, mcpServers);
-        
-        // Get UI components summary using centralized helper
-        const uiComponentsSummary = buildUIComponentsSummary();
-
-        // Use consolidated prompt builder with parsed data
-        const consolidatedPrompt = buildCoreSystemPrompt({
-            userWindowCount: parsedState.windowCount,
-            screenWidth: parsedState.workArea.width,
-            screenHeight: parsedState.workArea.height,
-            defaultX: parsedState.layoutCalculations.defaultX,
-            defaultY: parsedState.layoutCalculations.defaultY,
-            maxUsableWidth: parsedState.layoutCalculations.maxUsableWidth,
-            defaultHeight: parsedState.layoutCalculations.defaultHeight,
-            windowGap: parsedState.layoutCalculations.windowGap,
-            platformComponents,
-            userWindows: parsedState.userWindowsDescription,
-            mcpSummary,
-            uiComponentsSummary
-        });
-
-        logger.debug(`[Athena] Generated consolidated system prompt: ${consolidatedPrompt.length} characters`);
-        return consolidatedPrompt;
+    async buildEfficientSystemPrompt(canvas: Canvas, providerConfig: ProviderConfig): Promise<string> {
+        return this.systemPromptBuilder.buildPrompt(canvas, providerConfig, this.threadId);
     }
 
     private hashTools(tools: DynamicStructuredTool[], providerConfig: ProviderConfig): string {
@@ -623,30 +600,55 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
  */
 class LangGraphWorkflowManager implements WorkflowManager {
     private threadId?: string;
+    private cachedSystemPrompt?: string;
+    private lastCanvasHash?: string;
+    
+    // Performance metrics tracking
+    private readonly metrics = {
+        cacheHits: 0,
+        cacheMisses: 0,
+        requestTimes: [] as number[],
+        promptBuildTimes: [] as number[],
+        canvasHashTimes: [] as number[],
+        totalRequests: 0,
+        lastReportTime: Date.now(),
+        startTime: Date.now()
+    };
+    
+    // Metrics reporting interval (5 minutes)
+    private readonly METRICS_REPORT_INTERVAL = 5 * 60 * 1000;
+    private metricsTimer?: NodeJS.Timeout;
     
     constructor(
         private statusCallback?: ToolStatusCallback,
         private canvasEngine?: CanvasEngine,
         private systemPromptBuilder?: SystemPromptBuilder
-    ) {}
+    ) {
+        // Start periodic metrics reporting
+        this.startMetricsReporting();
+    }
 
     createWorkflow(llm: BaseChatModel, tools: DynamicStructuredTool[], statusCallback?: ToolStatusCallback): any {
         const toolNode = new ToolNode(tools);
         
         const shouldContinue = (state: typeof MessagesAnnotation.State) => {
+            const transitionStart = performance.now();
             const lastMessage = state.messages[state.messages.length - 1];
             
             if (lastMessage instanceof AIMessage && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
                 const toolNames = lastMessage.tool_calls.map(tc => tc.name).join(', ');
-                logger.debug(`[Athena] Using tools: ${toolNames}`);
+                const transitionTime = performance.now() - transitionStart;
+                logger.debug(`[Athena] Using tools: ${toolNames} (transition: ${transitionTime.toFixed(1)}ms)`);
                 return "tools";
             }
             
+            const transitionTime = performance.now() - transitionStart;
+            logger.debug(`[Athena] No tools needed (transition: ${transitionTime.toFixed(1)}ms)`);
             return END;
         };
 
         const callAgent = async (state: typeof MessagesAnnotation.State) => {
-            const systemPrompt = await this.buildSystemPrompt(llm);
+            const systemPrompt = await this.buildSystemPromptCached(llm);
             const messages = [new SystemMessage(systemPrompt), ...state.messages];
             
             try {
@@ -663,11 +665,13 @@ class LangGraphWorkflowManager implements WorkflowManager {
 
         // Enhanced tool execution with status tracking
         const enhancedToolNode = async (state: typeof MessagesAnnotation.State) => {
+            const nodeStart = performance.now();
             const lastMessage = state.messages[state.messages.length - 1];
             if (lastMessage instanceof AIMessage && lastMessage.tool_calls) {
                 // Send tool execution start status for each tool
                 lastMessage.tool_calls.forEach((toolCall) => {
-                    logger.debug(`[Athena] Executing: ${toolCall.name}`);
+                    const setupTime = performance.now() - nodeStart;
+                    logger.debug(`[Athena] Executing: ${toolCall.name} (node setup: ${setupTime.toFixed(1)}ms)`);
                     // Send tool status update if we have a callback
                     if (statusCallback) {
                         statusCallback({
@@ -683,7 +687,10 @@ class LangGraphWorkflowManager implements WorkflowManager {
             let result;
             
             try {
+                const toolExecutionStart = performance.now();
                 result = await toolNode.invoke(state);
+                const toolExecutionTime = performance.now() - toolExecutionStart;
+                logger.debug(`[Athena] Tool execution completed in ${toolExecutionTime.toFixed(1)}ms`);
                 
                 // Send completion status for all tools that were executed
                 if (lastMessage instanceof AIMessage && lastMessage.tool_calls && statusCallback) {
@@ -692,7 +699,7 @@ class LangGraphWorkflowManager implements WorkflowManager {
                             toolName: toolCall.name,
                             status: 'completed',
                             timestamp: new Date().toISOString(),
-                            metadata: { completed: true }
+                            metadata: { completed: true, executionTime: toolExecutionTime }
                         });
                     });
                 }
@@ -743,16 +750,28 @@ class LangGraphWorkflowManager implements WorkflowManager {
         // Extract thread ID from config
         this.threadId = config?.configurable?.thread_id;
         
+        // Track request timing
+        const requestStart = performance.now();
+        
         const result = await workflow.invoke({ messages: [new HumanMessage(message)] }, config);
         const lastMessage = result.messages[result.messages.length - 1];
         const response = lastMessage?.content || "Task completed.";
-        logger.info(`[Athena] Response: "${response}"`);
+        
+        // Record metrics
+        const requestTime = performance.now() - requestStart;
+        this.recordRequestMetrics(requestTime);
+        
+        logger.info(`[Athena] Response: "${response}" (${requestTime.toFixed(1)}ms)`);
         return response;
     }
 
     async streamMessage(workflow: any, message: string, config: any, onChunk: (chunk: string) => void): Promise<string> {
         // Extract thread ID from config
         this.threadId = config?.configurable?.thread_id;
+        
+        // Track request timing
+        const requestStart = performance.now();
+        
         let streamedContent = '';
         let detectedTools = new Set<string>();
         let chunkCount = 0;
@@ -764,7 +783,16 @@ class LangGraphWorkflowManager implements WorkflowManager {
                 { ...config, version: "v2" }
             );
 
+            let lastEventTime = performance.now();
             for await (const event of eventStream) {
+                const currentTime = performance.now();
+                const timeSinceLastEvent = currentTime - lastEventTime;
+                
+                // Log slow events (>100ms gap)
+                if (timeSinceLastEvent > 100) {
+                    logger.debug(`[Athena] Event stream gap: ${timeSinceLastEvent.toFixed(1)}ms before ${event.event}`);
+                }
+                
                 // Handle any content streaming (provider-agnostic)
                 if (event.event === "on_chat_model_stream" && event.data?.chunk?.content) {
                     const content = event.data.chunk.content;
@@ -777,11 +805,15 @@ class LangGraphWorkflowManager implements WorkflowManager {
                 
                 // Handle tool detection (event-agnostic)
                 this.detectAndSendToolCalls(event, detectedTools, onChunk);
+                
+                lastEventTime = currentTime;
             }
             
             // If we got content through streaming, return it (don't send again via onChunk)
             if (streamedContent.length > 0) {
-                logger.info(`[Athena] Streaming successful: ${streamedContent.length} chars, ${chunkCount} chunks`);
+                const requestTime = performance.now() - requestStart;
+                this.recordRequestMetrics(requestTime);
+                logger.info(`[Athena] Streaming successful: ${streamedContent.length} chars, ${chunkCount} chunks (${requestTime.toFixed(1)}ms)`);
                 return streamedContent;
             }
         } catch (error) {
@@ -799,10 +831,14 @@ class LangGraphWorkflowManager implements WorkflowManager {
             // Only send the response if we didn't already stream content
             if (response && streamedContent.length === 0) {
                 onChunk(response);
-                logger.info(`[Athena] Fallback response provided: ${response.length} characters`);
+                const requestTime = performance.now() - requestStart;
+                this.recordRequestMetrics(requestTime);
+                logger.info(`[Athena] Fallback response provided: ${response.length} characters (${requestTime.toFixed(1)}ms)`);
                 return response;
             }
             
+            const requestTime = performance.now() - requestStart;
+            this.recordRequestMetrics(requestTime);
             return streamedContent || response || "Response completed.";
         } catch (error) {
             logger.error(`[Athena] Both streaming and invoke failed:`, error);
@@ -810,52 +846,81 @@ class LangGraphWorkflowManager implements WorkflowManager {
         }
     }
 
-    private async buildSystemPrompt(llm: BaseChatModel): Promise<string> {
+    private async buildSystemPromptCached(llm: BaseChatModel): Promise<string> {
+        // Performance tracking
+        performance.mark('prompt-cache-start');
+        const promptStart = performance.now();
+        
         if (this.canvasEngine && this.systemPromptBuilder) {
             const canvas = await this.canvasEngine.getCanvas();
-            const providerConfig = ConfigurationManager.getInstance().get().provider;
             
-            // Check cache first if we have a thread ID
-            if (this.threadId) {
-                const promptCache = getSystemPromptCache();
-                const parser = getCanvasStateParser();
-                const parsedState = await parser.getParsedState(canvas);
+            // Time canvas hash generation
+            const hashStart = performance.now();
+            const canvasHash = createHash('md5').update(JSON.stringify(canvas)).digest('hex');
+            const hashTime = performance.now() - hashStart;
+            this.metrics.canvasHashTimes.push(hashTime);
+            
+            // Check if we can reuse cached prompt
+            if (this.cachedSystemPrompt && this.lastCanvasHash === canvasHash) {
+                performance.mark('prompt-cache-hit');
+                this.metrics.cacheHits++;
+                const promptTime = performance.now() - promptStart;
+                this.metrics.promptBuildTimes.push(promptTime);
                 
-                // Try to get cached prompt
-                const mcpToolsCount = (llm as any)._kwargs?.tools?.length || 0;
-                const cachedPrompt = promptCache.getCachedPrompt(
-                    this.threadId,
-                    parsedState.hash,
-                    providerConfig,
-                    mcpToolsCount
-                );
-                
-                if (cachedPrompt) {
-                    return cachedPrompt;
-                }
-                
-                // Build fresh prompt
-                const freshPrompt = await this.systemPromptBuilder.buildPrompt(canvas, providerConfig, this.threadId);
-                
-                // Cache it
-                promptCache.setCachedPrompt(
-                    this.threadId,
-                    freshPrompt,
-                    parsedState.hash,
-                    providerConfig,
-                    mcpToolsCount
-                );
-                
-                return freshPrompt;
+                logger.debug('[Athena] Reusing cached system prompt', { 
+                    cacheHit: true,
+                    hashTime: `${hashTime.toFixed(2)}ms`,
+                    promptTime: `${promptTime.toFixed(2)}ms`,
+                    cacheHitRatio: `${(this.metrics.cacheHits / (this.metrics.cacheHits + this.metrics.cacheMisses) * 100).toFixed(1)}%`
+                });
+                return this.cachedSystemPrompt;
             }
             
-            // No thread ID, build fresh
-            return this.systemPromptBuilder.buildPrompt(canvas, providerConfig);
+            performance.mark('prompt-cache-miss');
+            this.metrics.cacheMisses++;
+            
+            // Build new prompt and cache it
+            const providerConfig = ConfigurationManager.getInstance().get().provider;
+            const buildStart = performance.now();
+            const prompt = await this.systemPromptBuilder.buildPrompt(canvas, providerConfig, this.threadId);
+            const buildTime = performance.now() - buildStart;
+            
+            this.cachedSystemPrompt = prompt;
+            this.lastCanvasHash = canvasHash;
+            
+            const promptTime = performance.now() - promptStart;
+            this.metrics.promptBuildTimes.push(promptTime);
+            
+            logger.debug('[Athena] Built and cached new system prompt', { 
+                cacheHit: false, 
+                promptLength: prompt.length,
+                canvasHash: canvasHash.slice(0, 8),
+                hashTime: `${hashTime.toFixed(2)}ms`,
+                buildTime: `${buildTime.toFixed(2)}ms`,
+                totalTime: `${promptTime.toFixed(2)}ms`,
+                cacheHitRatio: `${(this.metrics.cacheHits / (this.metrics.cacheHits + this.metrics.cacheMisses) * 100).toFixed(1)}%`
+            });
+            return prompt;
         }
         return "You are Athena, an AI assistant with desktop management capabilities.";
     }
 
     private detectAndSendToolCalls(event: any, detectedTools: Set<string>, onChunk: (chunk: string) => void) {
+        // Detect tool calls as early as possible from different event types
+        
+        // 1. From AI message with tool calls (earliest detection)
+        if (event.event === "on_chat_model_end" && event.data?.output?.tool_calls) {
+            const toolCalls = event.data.output.tool_calls;
+            for (const toolCall of toolCalls) {
+                if (toolCall.name && !detectedTools.has(toolCall.name)) {
+                    logger.debug(`[Athena] Early tool detection: ${toolCall.name}`);
+                    onChunk(`🔧 ${toolCall.name}`);
+                    detectedTools.add(toolCall.name);
+                }
+            }
+        }
+        
+        // 2. From tool start event
         if (event.event === "on_tool_start" && event.name) {
             const toolName = event.name;
             if (!detectedTools.has(toolName)) {
@@ -864,6 +929,7 @@ class LangGraphWorkflowManager implements WorkflowManager {
             }
         }
 
+        // 3. From chain start with messages (fallback)
         if (event.event === "on_chain_start" && event.data?.input?.messages) {
             const messages = event.data.input.messages;
             const lastMessage = messages[messages.length - 1];
@@ -901,24 +967,88 @@ class LangGraphWorkflowManager implements WorkflowManager {
             }
         }
     }
+
+    private recordRequestMetrics(requestTime: number): void {
+        this.metrics.requestTimes.push(requestTime);
+        this.metrics.totalRequests++;
+    }
+
+    private startMetricsReporting(): void {
+        this.metricsTimer = setInterval(() => {
+            const now = Date.now();
+            const elapsed = now - this.metrics.startTime;
+            const totalRequests = this.metrics.totalRequests;
+            const cacheHits = this.metrics.cacheHits;
+            const cacheMisses = this.metrics.cacheMisses;
+            const totalPromptBuildTime = this.metrics.promptBuildTimes.reduce((a, b) => a + b, 0);
+            const totalCanvasHashTime = this.metrics.canvasHashTimes.reduce((a, b) => a + b, 0);
+            const totalRequestTime = this.metrics.requestTimes.reduce((a, b) => a + b, 0);
+
+            const averageRequestTime = totalRequestTime / totalRequests;
+            const averagePromptBuildTime = totalPromptBuildTime / totalRequests;
+            const averageCanvasHashTime = totalCanvasHashTime / totalRequests;
+            const cacheHitRatio = cacheHits / (cacheHits + cacheMisses);
+
+            logger.info(`[Athena] Workflow metrics - Total Requests: ${totalRequests}, Cache Hits: ${cacheHits}, Cache Misses: ${cacheMisses}, Cache Hit Ratio: ${cacheHitRatio.toFixed(2)}, Average Request Time: ${averageRequestTime.toFixed(2)}ms, Average Prompt Build Time: ${averagePromptBuildTime.toFixed(2)}ms, Average Canvas Hash Time: ${averageCanvasHashTime.toFixed(2)}ms`);
+
+            // Reset metrics for next reporting period
+            this.metrics.cacheHits = 0;
+            this.metrics.cacheMisses = 0;
+            this.metrics.requestTimes = [];
+            this.metrics.promptBuildTimes = [];
+            this.metrics.canvasHashTimes = [];
+            this.metrics.totalRequests = 0;
+            this.metrics.lastReportTime = now;
+            this.metrics.startTime = now;
+        }, this.METRICS_REPORT_INTERVAL);
+    }
+
+    public stopMetricsReporting(): void {
+        if (this.metricsTimer) {
+            clearInterval(this.metricsTimer);
+            this.metricsTimer = undefined;
+        }
+    }
+
+    // Method to get current metrics snapshot for debugging
+    public getMetricsSnapshot(): any {
+        const totalRequests = this.metrics.totalRequests;
+        const cacheHits = this.metrics.cacheHits;
+        const cacheMisses = this.metrics.cacheMisses;
+        
+        return {
+            totalRequests,
+            cacheHits,
+            cacheMisses,
+            cacheHitRatio: totalRequests > 0 ? cacheHits / (cacheHits + cacheMisses) : 0,
+            averageRequestTime: this.metrics.requestTimes.length > 0 
+                ? this.metrics.requestTimes.reduce((a, b) => a + b, 0) / this.metrics.requestTimes.length 
+                : 0,
+            averagePromptBuildTime: this.metrics.promptBuildTimes.length > 0 
+                ? this.metrics.promptBuildTimes.reduce((a, b) => a + b, 0) / this.metrics.promptBuildTimes.length 
+                : 0,
+            averageCanvasHashTime: this.metrics.canvasHashTimes.length > 0 
+                ? this.metrics.canvasHashTimes.reduce((a, b) => a + b, 0) / this.metrics.canvasHashTimes.length 
+                : 0,
+            uptimeMs: Date.now() - this.metrics.startTime
+        };
+    }
 }
 
 /**
  * Default system prompt builder implementation
  */
 class DefaultSystemPromptBuilder implements SystemPromptBuilder {
-    constructor() {}
+    constructor(private mcpManager: MCPManager) {}
 
-    async buildPrompt(canvas: any, providerConfig: ProviderConfig, threadId?: string): Promise<string> {
-        // Use centralized parser to avoid duplicate processing
+    async buildPrompt(canvas: Canvas, providerConfig: ProviderConfig, threadId?: string): Promise<string> {
         const parser = getCanvasStateParser();
         const parsedState = await parser.getParsedState(canvas);
-        
-        // Get UI components summary using centralized helper
-        const uiComponentsSummary = buildUIComponentsSummary();
 
-        // Build base prompt with parsed data (no MCP or error context for now)
-        const prompt = buildCoreSystemPrompt({
+        const mcpTools = this.mcpManager.getTools();
+        const mcpServers = this.mcpManager.getConnectedServers();
+        
+        return buildCoreSystemPrompt({
             userWindowCount: parsedState.windowCount,
             screenWidth: parsedState.workArea.width,
             screenHeight: parsedState.workArea.height,
@@ -927,13 +1057,10 @@ class DefaultSystemPromptBuilder implements SystemPromptBuilder {
             maxUsableWidth: parsedState.layoutCalculations.maxUsableWidth,
             defaultHeight: parsedState.layoutCalculations.defaultHeight,
             windowGap: parsedState.layoutCalculations.windowGap,
-            platformComponents: [],
+            platformComponents: buildPlatformComponentsDescription(parsedState.workArea, parsedState.layoutCalculations),
             userWindows: parsedState.userWindowsDescription,
-            mcpSummary: '', // Empty for now to avoid issues
-            uiComponentsSummary
+            mcpSummary: buildMCPSummary(mcpTools, mcpServers),
+            uiComponentsSummary: buildUIComponentsSummary()
         });
-
-        logger.debug(`[Athena] Generated system prompt: ${prompt.length} characters`);
-        return prompt;
     }
 } 

@@ -23,7 +23,7 @@ logger.info('--- [main.ts] Script execution started with Canvas Engine ---');
 // Configuration, Utilities, and Services
 import { setUIDiscoveryService, UIDiscoveryService } from '@core/platform/discovery/main-process-discovery';
 import { apiKeyManager } from './core/infrastructure/config/api-key-manager';
-import { initializeAgentBridge } from './core/platform/ipc/agent-bridge';
+import { AgentBridge, initializeAgentBridge } from './core/platform/ipc/agent-bridge';
 import { getWindowRegistry } from './core/platform/windows/window-registry';
 
 // Set the application name as early as possible.
@@ -32,7 +32,7 @@ logger.info(`[App] App name set to "${APP_NAME}" at top-level.`);
 
 // Global references to services and the agent bridge
 let uiDiscoveryService: UIDiscoveryService | undefined;
-let agentBridge: any | undefined;
+let agentBridge: AgentBridge | undefined;
 
 const initializeApp = async (): Promise<void> => {
     logger.info(`[initializeApp] Current NODE_ENV: ${process.env.NODE_ENV}`);
@@ -133,10 +133,13 @@ const initializeApp = async (): Promise<void> => {
         const providerInfo = agentBridge.getProviderInfo();
         logger.info(`[initializeApp] Agent ready: ${status}, Provider: ${providerInfo.service} (${providerInfo.model})`);
         
-        // Send greeting message to AthenaWidget after everything is initialized
-        setTimeout(async () => {
-            await agentBridge.sendGreetingMessage();
-        }, 1000); // Small delay to ensure UI is fully rendered
+        // Listen for the AthenaWidget to signal it's ready
+        ipcMain.once('athena-widget-ready', async () => {
+            logger.info('[App] AthenaWidget is ready, sending greeting message.');
+            if (agentBridge) {
+                await agentBridge.sendGreetingMessage();
+            }
+        });
     }
     
     // Log Window Registry status for enhanced UI system
@@ -169,8 +172,31 @@ app.on('activate', () => {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) {
-        logger.info("[App] No windows open, calling initializeApp to re-initialize.");
-        initializeApp();
+        logger.info("[App] No windows open, re-creating platform components.");
+        if (uiDiscoveryService) {
+            const platformComponents = uiDiscoveryService.getPlatformComponents();
+            (async () => {
+                for (const name of platformComponents) {
+                    await uiDiscoveryService.initializeUIWindow(name);
+                }
+            })();
+        } else {
+            logger.error("[App] UI Discovery Service not available on 'activate'. Re-initializing app.");
+            initializeApp();
+        }
+    } else {
+        // If windows exist, focus them.
+        logger.info("[App] Windows exist, bringing them to front.");
+        const windowRegistry = getWindowRegistry();
+        const allWindows = windowRegistry.getAllWindows();
+        allWindows.forEach(windowInfo => {
+            if (windowInfo.window && !windowInfo.window.isDestroyed()) {
+                if (windowInfo.window.isMinimized()) {
+                    windowInfo.window.restore();
+                }
+                windowInfo.window.focus();
+            }
+        });
     }
 });
 

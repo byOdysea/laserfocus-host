@@ -9,7 +9,6 @@ export interface ByokwidgetAPI {
     
     // Configuration management
     getConfig: () => Promise<{ success: boolean; config?: any; error?: string }>;
-    forceConfigRefresh: () => Promise<{ success: boolean; error?: string }>;
     updateProvider: (updates: {
         service?: string;
         model?: string;
@@ -44,7 +43,6 @@ contextBridge.exposeInMainWorld('byokwidgetAPI', {
     
     // Configuration management
     getConfig: () => ipcRenderer.invoke('byokwidget:get-config'),
-    forceConfigRefresh: () => ipcRenderer.invoke('byokwidget:force-config-refresh'),
     updateProvider: (updates: any) => ipcRenderer.invoke('byokwidget:update-provider', updates),
     updateApp: (updates: any) => ipcRenderer.invoke('byokwidget:update-app', updates),
     

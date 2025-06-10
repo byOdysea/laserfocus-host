@@ -89,6 +89,18 @@ body {
     opacity: 0.7;
 }
 
+/* Thinking styles */
+.thinking .thinking-indicator {
+    color: #9d7cbd;
+    font-style: italic;
+    animation: thinking-pulse 2s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1.0; }
+}
+
 /* Streaming styles */
 .log-line.streaming {
     background-color: rgba(70, 134, 255, 0.1);

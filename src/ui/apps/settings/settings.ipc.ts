@@ -68,7 +68,6 @@ const SettingsIpcHandlers: AppIpcModule = {
             try {
                 logger.info(`[settingsIPC] Getting models for provider: ${provider}`);
                 const models = getProviderModelsWithDefaults(provider as keyof typeof PROVIDER_MODELS) || [];
-                logger.info(`[settingsIPC] Returning ${models.length} models:`, models);
                 return {
                     success: true,
                     models
@@ -191,14 +190,11 @@ const SettingsIpcHandlers: AppIpcModule = {
             try {
                 logger.info(`[settingsIPC] Reloading MCP configuration`);
                 
-                // Trigger configuration reload
-                const configManager = ConfigurationManager.getInstance();
-                await configManager.load();
-                
+                // ✅ UPDATED: Let the MCP manager handle its own refresh via ConfigurableComponent
                 // Note: Agent will automatically refresh tools when MCP servers connect via event listeners
                 // No need for manual refresh coordination
                 
-                logger.info(`[settingsIPC] MCP configuration reloaded successfully`);
+                logger.info(`[settingsIPC] MCP configuration refresh triggered via existing event system`);
                 
                 return { success: true };
             } catch (error) {
@@ -311,7 +307,7 @@ const SettingsIpcHandlers: AppIpcModule = {
         });
 
         // Toggle MCP server enabled state
-        ipcMain.handle('settings:toggle-mcp-server', async (event, serverId: string, enabled: boolean) => {
+        ipcMain.handle('settings:toggle-mcp-server-enabled', async (event, serverId: string, enabled: boolean) => {
             try {
                 const configManager = ConfigurationManager.getInstance();
                 const config = configManager.get();
@@ -366,6 +362,23 @@ const SettingsIpcHandlers: AppIpcModule = {
         });
 
         logger.info('[settingsIPC] settings IPC handlers registered successfully');
+    },
+
+    unregisterMainProcessHandlers: (ipcMain: IpcMain) => {
+        logger.info('[settingsIPC] Unregistering settings IPC handlers');
+        ipcMain.removeHandler('settings:get-config');
+        ipcMain.removeHandler('settings:update-config');
+        ipcMain.removeHandler('settings:get-schema');
+        ipcMain.removeHandler('settings:get-models');
+        ipcMain.removeHandler('settings:test-mcp-connection');
+        ipcMain.removeHandler('settings:get-mcp-status');
+        ipcMain.removeHandler('settings:subscribe-mcp-events');
+        ipcMain.removeHandler('settings:reload-mcp');
+        ipcMain.removeHandler('settings:update-mcp-server');
+        ipcMain.removeHandler('settings:add-mcp-server');
+        ipcMain.removeHandler('settings:remove-mcp-server');
+        ipcMain.removeHandler('settings:toggle-mcp-server-enabled');
+        ipcMain.removeHandler('settings:focus-byok-widget');
     }
 };
 

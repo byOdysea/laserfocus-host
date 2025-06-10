@@ -5,12 +5,25 @@
  * Note: This replaces the monolithic AthenaBridge with a focused service
  */
 
+import { Canvas } from '@/lib/types/canvas';
 import { ConversationUpdate, ToolStatusFormatter } from '@core/agent/types/tool-status';
 import logger from '@utils/logger';
 import { ipcMain } from 'electron';
 import { AthenaAgent } from '../../agent/athena-agent';
 import { config } from '../../infrastructure/config/configuration-manager';
+import { AppModuleInstance } from '../discovery/main-process-discovery';
 import { getWindowRegistry } from '../windows/window-registry';
+
+/**
+ * Type for the information about the current LLM provider.
+ */
+export interface ProviderInfo {
+    service: string;
+    model: string;
+    ready: boolean;
+    mcpServers?: string[];
+    lastError?: string;
+}
 
 /**
  * Streaming throttler to make the output smoother and more magical
@@ -106,7 +119,7 @@ class StreamingThrottler {
 export class AgentBridge {
     private athenaAgent: AthenaAgent | null = null;
     private initialized = false;
-    private athenaWidgetWindow: any = null;
+    private athenaWidgetWindow: AppModuleInstance | null = null;
     private statusHandler: ConversationStatusHandler;
     
     constructor() {
@@ -283,6 +296,12 @@ export class AgentBridge {
                     content: ''
                 });
 
+                // Send thinking indicator first
+                this.statusHandler.sendUpdate({
+                    type: 'agent-thinking',
+                    content: 'Thinking...'
+                });
+
                 // Send error message through streaming system
                 const streamHandler = this.createStreamHandler();
                 streamHandler.sendChunk(errorMsg);
@@ -304,15 +323,16 @@ export class AgentBridge {
                     content: userInput
                 });
 
-                // Send streaming start signal
+                // Send thinking indicator
                 this.statusHandler.sendUpdate({
-                    type: 'agent-stream-start',
-                    content: ''
+                    type: 'agent-thinking',
+                    content: 'Thinking...'
                 });
 
                 let fullResponse = '';
                 let streamingChunkCount = 0;
                 const logStreamingEvery = 50;
+                let streamingStarted = false;
                 
                 // Create smooth streaming handler based on configuration
                 const streamHandler = this.createStreamHandler();
@@ -332,8 +352,8 @@ export class AgentBridge {
                                 timestamp: statusUpdate.timestamp
                             });
                             logger.debug(`[AgentBridge] Tool status update sent: ${statusUpdate.toolName} - ${statusUpdate.status}`);
-                            return;
                         }
+                        return;
                     }
                     
                     // Handle tool call indicators
@@ -342,6 +362,16 @@ export class AgentBridge {
                         streamHandler.sendToolCall(toolName);
                         logger.debug(`[AgentBridge] Tool call sent: ${toolName}`);
                         return;
+                    }
+
+                    // If we've reached here, it's a content chunk.
+                    // Signal the UI to start streaming if this is the first content chunk.
+                    if (!streamingStarted) {
+                        this.statusHandler.sendUpdate({
+                            type: 'agent-stream-start',
+                            content: ''
+                        });
+                        streamingStarted = true;
                     }
                     
                     // Send regular streaming chunk
@@ -355,6 +385,15 @@ export class AgentBridge {
 
                 // Finalize streaming
                 await streamHandler.finish();
+
+                // If no content was ever streamed (e.g., only tool calls occurred),
+                // we still need to transition the UI out of the "thinking" state.
+                if (!streamingStarted) {
+                    this.statusHandler.sendUpdate({
+                        type: 'agent-stream-start',
+                        content: ''
+                    });
+                }
 
                 // Send streaming end signal
                 this.statusHandler.sendUpdate({
@@ -400,45 +439,40 @@ export class AgentBridge {
     }
     
     /**
-     * Notify UI about canvas changes
+     * Notify the renderer process that the canvas has changed
      */
-    private notifyCanvasChange(canvas: any): void {
-        // Send canvas state to all renderer processes
-        // This maintains compatibility with existing UI that expects canvas updates
-        const webContents = require('electron').webContents;
+    private notifyCanvasChange(canvas: Canvas): void {
+        const windowRegistry = getWindowRegistry();
+        const athenaWindowInfo = windowRegistry.getWindowByComponent('AthenaWidget');
         
-        webContents.getAllWebContents().forEach((contents: any) => {
-            if (!contents.isDestroyed()) {
-                contents.send('canvas-state-changed', canvas);
-            }
-        });
+        if (athenaWindowInfo && athenaWindowInfo.window && !athenaWindowInfo.window.isDestroyed()) {
+            athenaWindowInfo.window.webContents.send('athena:canvas-update', canvas);
+            logger.debug(`[AgentBridge] Sent canvas update to Athena widget`);
+        } else {
+            logger.warn(`[AgentBridge] Athena widget window not found or not ready, cannot send canvas update.`);
+        }
     }
     
     /**
      * Check if Athena is ready
      */
     isReady(): boolean {
-        return this.initialized && !!this.athenaAgent && this.athenaAgent.isReady();
+        if (!this.athenaAgent) return false;
+        return this.athenaAgent.isReady();
     }
     
     /**
      * Get Athena provider info including connection status
      */
-    getProviderInfo(): any {
+    getProviderInfo(): ProviderInfo {
         if (!this.athenaAgent) {
             return {
                 service: 'unknown',
                 model: 'unknown',
-                ready: false,
-                connectionStatus: 'unknown'
+                ready: false
             };
         }
-        
-        const providerInfo = this.athenaAgent.getProviderInfo();
-        return {
-            ...providerInfo,
-            connectionStatus: this.athenaAgent.getConnectionStatus()
-        };
+        return this.athenaAgent.getProviderInfo();
     }
     
     /**

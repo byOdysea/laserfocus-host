@@ -1,26 +1,26 @@
-import { IpcMain } from 'electron';
 import { AppIpcModule, AppMainProcessInstances } from '@core/platform/ipc/types';
-        import { RemindersWindow } from '@ui/apps/reminders/reminders.main';
+import { RemindersWindow } from '@ui/apps/reminders/reminders.main';
 import * as logger from '@utils/logger';
+import { IpcMain } from 'electron';
 
 const RemindersIpcHandlers: AppIpcModule = {
-    moduleId: 'reminders',
+    moduleId: 'Reminders',
     
     registerMainProcessHandlers: (
         ipcMain: IpcMain,
         appInstance: RemindersWindow,
         allAppInstances?: AppMainProcessInstances
     ) => {
-        logger.info('[remindersIPC] Registering reminders IPC handlers');
+        logger.info('[RemindersIPC] Registering reminders IPC handlers');
 
         // Example: Handle app-specific events
         ipcMain.handle('reminders:example-action', async (event, data) => {
             try {
-                logger.info(`[remindersIPC] Example action called with:`, data);
+                logger.info(`[RemindersIPC] Example action called with:`, data);
                 // Add your app-specific logic here
                 return { success: true, result: 'Example result' };
             } catch (error) {
-                logger.error('[remindersIPC] Error in example action:', error);
+                logger.error('[RemindersIPC] Error in example action:', error);
                 return { success: false, error: 'Failed to execute action' };
             }
         });
@@ -32,7 +32,7 @@ const RemindersIpcHandlers: AppIpcModule = {
             }
         });
 
-        logger.info('[remindersIPC] reminders IPC handlers registered successfully');
+        logger.info('[RemindersIPC] reminders IPC handlers registered successfully');
     }
 };
 
