@@ -46,9 +46,20 @@ export const ByokwidgetApp: React.FC = () => {
 
         // Listen for focus events (when the window comes back into focus)
         const handleFocus = () => {
+            console.log('[Byokwidget] Window focus detected, reloading config...');
             // Reload config when window regains focus to catch any changes
             loadInitialState();
         };
+
+        // Periodic check for configuration changes (especially useful in production)
+        const periodicCheck = () => {
+            console.log('[Byokwidget] Periodic config check...');
+            loadInitialState();
+        };
+
+        // More frequent polling in production builds to ensure config changes are caught
+        const pollInterval = process.env.NODE_ENV === 'production' ? 3000 : 10000; // 3s in prod, 10s in dev
+        const intervalId = setInterval(periodicCheck, pollInterval);
 
         window.addEventListener('focus', handleFocus);
         
@@ -58,6 +69,7 @@ export const ByokwidgetApp: React.FC = () => {
         return () => {
             window.removeEventListener('focus', handleFocus);
             window.removeEventListener('config-updated', handleConfigChange);
+            clearInterval(intervalId);
         };
     }, []);
 
@@ -76,6 +88,14 @@ export const ByokwidgetApp: React.FC = () => {
     const loadInitialState = async () => {
         try {
             console.log('[Byokwidget] Loading initial state...');
+            console.log('[Byokwidget] Environment:', process.env.NODE_ENV);
+            
+            // In production, force a config refresh to ensure we get the latest changes
+            if (process.env.NODE_ENV === 'production') {
+                console.log('[Byokwidget] Production mode: forcing config refresh...');
+                await window.byokwidgetAPI.forceConfigRefresh();
+            }
+            
             const [configResult, apiKeyResult] = await Promise.all([
                 window.byokwidgetAPI.getConfig(),
                 window.byokwidgetAPI.getApiKey()
@@ -93,6 +113,7 @@ export const ByokwidgetApp: React.FC = () => {
                 provider = configResult.config.provider || '';
                 model = configResult.config.model || '';
                 console.log('[Byokwidget] Updated provider:', provider, 'model:', model);
+                console.log('[Byokwidget] Full config object:', JSON.stringify(configResult.config, null, 2));
             } else {
                 console.error('[Byokwidget] Failed to load configuration:', configResult);
                 setState((prev: SimpleByokState) => ({
@@ -115,6 +136,8 @@ export const ByokwidgetApp: React.FC = () => {
             }
 
             console.log('[Byokwidget] Setting state with provider:', provider, 'model:', model);
+            console.log('[Byokwidget] Previous state provider/model:', state.provider, state.model);
+            
             setState((prev: SimpleByokState) => ({
                 ...prev,
                 provider,
@@ -301,22 +324,26 @@ export const ByokwidgetApp: React.FC = () => {
                     </button>
                 </div>
                 
-                {state.error && (
-                    <div className="error-message">{state.error}</div>
-                )}
+                {/* Always render error container to reserve space */}
+                <div className="error-message" data-empty={!state.error}>
+                    {state.error || ''}
+                </div>
                 
-                {state.provider === 'google' && !state.hasStoredApiKey && (
-                    <div className="help-text">
-                        get a free api key from{' '}
-                        <a 
-                            href="https://makersuite.google.com/app/apikey" 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                        >
-                            google ai studio
-                        </a>
-                    </div>
-                )}
+                {/* Always render help text container to reserve space */}
+                <div className="help-text" data-empty={!(state.provider === 'google' && !state.hasStoredApiKey)}>
+                    {state.provider === 'google' && !state.hasStoredApiKey ? (
+                        <>
+                            get a free api key from{' '}
+                            <a 
+                                href="https://makersuite.google.com/app/apikey" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                            >
+                                google ai studio
+                            </a>
+                        </>
+                    ) : null}
+                </div>
             </div>
         </div>
     );

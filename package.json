@@ -7,7 +7,7 @@
     "clean": "rimraf dist",
     "build": "vite build",
     "start": "NODE_ENV=production yarn build && electron . --enable-logging --inspect",
-    "start:prod": "NODE_ENV=production electron . --enable-logging",
+    "start:prod": "NODE_ENV=production electron . --enable-logging --js-flags=\"--max-old-space-size=4096\" --disable-background-timer-throttling",
     "dev": "NODE_ENV=development vite",
     "package-mac": "electron-builder --mac",
     "create-app": "tsx src/core/app-discovery/app-generator.ts"

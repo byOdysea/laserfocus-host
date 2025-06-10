@@ -148,9 +148,8 @@ export class WindowRegistry {
             }
         }
         
-        // Remove excessive logging - this was flooding logs during streaming
-        // Only log if there are issues (no windows found)
-        if (sentCount === 0 && targetWindows.length > 0) {
+        // Only log warnings in development to reduce log noise
+        if (process.env.NODE_ENV === 'development' && sentCount === 0 && targetWindows.length > 0) {
             logger.warn(`[WindowRegistry] Failed to send message to windows with capability "${capability}"`);
         }
         

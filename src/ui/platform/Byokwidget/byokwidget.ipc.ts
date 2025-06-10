@@ -79,7 +79,8 @@ const ByokwidgetIpcHandlers: AppIpcModule = {
         // Get current configuration
         ipcMain.handle('byokwidget:get-config', async () => {
             try {
-                // Ensure configuration is loaded before accessing it
+                // Force configuration reload to ensure we get the latest changes
+                logger.debug('[BYOK-IPC] Forcing configuration reload before read...');
                 await config.load();
                 
                 const currentConfig = config.get();
@@ -89,7 +90,8 @@ const ByokwidgetIpcHandlers: AppIpcModule = {
                 logger.debug('[BYOK-IPC] Current config values:', {
                     provider: currentConfig.provider.service,
                     model: currentConfig.provider.model,
-                    hasApiKey
+                    hasApiKey,
+                    environment: process.env.NODE_ENV
                 });
                 
                 return {
@@ -107,6 +109,26 @@ const ByokwidgetIpcHandlers: AppIpcModule = {
             } catch (error) {
                 logger.error('[BYOK-IPC] Error getting config:', error);
                 return { success: false, error: 'Failed to get configuration' };
+            }
+        });
+
+        // Force configuration refresh (useful for debugging and production)
+        ipcMain.handle('byokwidget:force-config-refresh', async () => {
+            try {
+                logger.info('[BYOK-IPC] Force configuration refresh requested');
+                await config.load();
+                
+                // Trigger change callbacks to notify all components
+                const currentConfig = config.get();
+                logger.info('[BYOK-IPC] Configuration refreshed:', {
+                    provider: currentConfig.provider.service,
+                    model: currentConfig.provider.model
+                });
+                
+                return { success: true };
+            } catch (error) {
+                logger.error('[BYOK-IPC] Error force refreshing config:', error);
+                return { success: false, error: 'Failed to refresh configuration' };
             }
         });
 

@@ -82,14 +82,40 @@ export function buildUIComponentsDescription(availableComponents: {
 }
 
 /**
- * Builds complete UI components summary for core system prompt
+ * UI Components summary builder for system prompts
+ * Centralizes the logic to avoid duplication across different prompt builders
  */
-export function buildUIComponentsSummary(availableComponents: {
-    platform: string[];
-    apps: string[];
-    widgets: string[];
-}): string {
-    const componentList = buildUIComponentsDescription(availableComponents);
+
+import { getUIDiscoveryService } from '../../platform/discovery/main-process-discovery';
+
+/**
+ * Build UI components summary with URI schemes for the system prompt
+ * @returns Formatted UI components summary string
+ */
+export function buildUIComponentsSummary(): string {
+    // Get available UI components
+    const uiDiscoveryService = getUIDiscoveryService();
+    let availableApps: string[] = [];
     
-    return uiComponentsPrompt.replace('{{uiComponents}}', componentList);
+    if (uiDiscoveryService) {
+        const allApps = uiDiscoveryService.getAllApps();
+        availableApps = allApps.filter((app: string) => 
+            !['AthenaWidget', 'InputPill', 'Byokwidget'].includes(app)
+        );
+    }
+
+    // Use default apps if none found
+    const appsList = availableApps.length > 0 ? availableApps : ['notes', 'settings', 'reminders'];
+    
+    // Build comprehensive UI components summary with URI schemes
+    return `# Available Internal Apps
+${appsList.map(app => `- ${app}: Use \`apps://${app}\` (e.g., "open ${app}" → create_element with contentSource="apps://${app}")`).join('\n')}
+
+# URI Scheme Examples
+- apps://settings - Opens the LaserFocus settings app
+- apps://notes - Opens the notes application  
+- apps://reminders - Opens the reminders app
+- https://example.com - Opens external websites
+
+# Critical: Internal apps use SAME layout rules as external URLs!`;
 } 

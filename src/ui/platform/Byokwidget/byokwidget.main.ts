@@ -1,7 +1,7 @@
+import { getWindowRegistry } from '@core/platform/windows/window-registry';
 import { createAppFileLoader } from '@lib/utils/app-file-loader';
 import * as logger from '@utils/logger';
 import { BrowserWindow, Display } from 'electron';
-import { getWindowRegistry } from '@core/platform/windows/window-registry';
 
 export class ByokwidgetWindow {
     public window: BrowserWindow;
@@ -20,7 +20,7 @@ export class ByokwidgetWindow {
         
         this.window = new BrowserWindow({
             width: 350, // Same width as Athena widget
-            height: 125, // Smaller height for compact config interface
+            height: 135, // Smaller height for compact config interface
             title: 'Laserfocus Configuration',
             webPreferences: {
                 preload: this.preloadPath,

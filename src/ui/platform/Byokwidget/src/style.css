@@ -15,7 +15,8 @@ body {
     display: flex;
     flex-direction: column;
     padding: 14px;
-    justify-content: space-around;
+    gap: 16px; /* Fixed gap between sections */
+    overflow: hidden; /* Prevent any scrollbars during transitions */
 }
 
 .byok-widget.loading {
@@ -33,6 +34,7 @@ body {
 
 /* Provider Header */
 .provider-header {
+    flex-shrink: 0; /* Prevent shrinking */
 }
 
 .provider-title {
@@ -109,6 +111,8 @@ body {
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 500;
+    min-width: 70px; /* Reserve space for longest status text */
+    transition: all 0.2s ease;
 }
 
 .settings-button {
@@ -132,6 +136,10 @@ body {
 
 /* API Key Section */
 .api-key-section {
+    flex-shrink: 0; /* Prevent shrinking */
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
 .api-key-label {
@@ -206,11 +214,21 @@ body {
 .error-message {
     color: #ff6b6b;
     font-size: 10px;
-    margin-top: 6px;
     padding: 6px 8px;
     background: rgba(255, 107, 107, 0.1);
     border-radius: 3px;
     border: 1px solid rgba(255, 107, 107, 0.2);
+    min-height: 18px; /* Reserve space even when empty */
+    box-sizing: border-box;
+    transition: opacity 0.2s ease;
+}
+
+.error-message:empty,
+.error-message[data-empty="true"] {
+    opacity: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 6px 8px; /* Keep padding to maintain height */
 }
 
 /* Help Text */
@@ -218,8 +236,17 @@ body {
     font-size: 10px;
     color: #777;
     line-height: 1.4;
-    margin-top: 8px;
     text-align: center;
+    min-height: 28px; /* Reserve space for help text */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease;
+}
+
+.help-text:empty,
+.help-text[data-empty="true"] {
+    opacity: 0;
 }
 
 .help-text a {

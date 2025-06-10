@@ -23,6 +23,10 @@ export class CanvasEngine {
     private adapter: CanvasAdapter;
     private canvas: Canvas | null = null;
     
+    // Canvas state memoization for performance
+    private canvasStateCache: { canvas: Canvas; timestamp: number } | null = null;
+    private readonly CACHE_TTL_MS = 100; // 100ms cache to prevent redundant queries
+    
     constructor(canvasType: string = 'desktop') {
         // In v5, this would be dynamic based on canvas type
         switch (canvasType) {
@@ -52,13 +56,24 @@ export class CanvasEngine {
     }
     
     /**
-     * Get current canvas state
+     * Get current canvas state with memoization
      */
     async getCanvas(): Promise<Canvas> {
         if (!this.canvas) {
             throw new Error('Canvas not initialized. Call initialize() first.');
         }
-        return await this.adapter.getCanvasState();
+        
+        // Check cache first
+        const now = Date.now();
+        if (this.canvasStateCache && (now - this.canvasStateCache.timestamp) < this.CACHE_TTL_MS) {
+            logger.debug('[CanvasEngine] Returning cached canvas state');
+            return this.canvasStateCache.canvas;
+        }
+        
+        // Get fresh state and cache it
+        const canvas = await this.adapter.getCanvasState();
+        this.canvasStateCache = { canvas, timestamp: now };
+        return canvas;
     }
     
     /**
@@ -72,6 +87,9 @@ export class CanvasEngine {
         logger.debug(`[CanvasEngine] Creating element: ${params.type}`);
         const element = await this.adapter.createElement(params);
         logger.debug(`[CanvasEngine] Element created: ${element.id}`);
+        
+        // Invalidate cache when modifications occur
+        this.invalidateCache();
         
         return element;
     }
@@ -94,6 +112,9 @@ export class CanvasEngine {
         logger.debug(`[CanvasEngine] Modifying element: ${elementId}`);
         await this.adapter.modifyElement(element, changes);
         logger.debug(`[CanvasEngine] Element modified: ${elementId}`);
+        
+        // Invalidate cache when modifications occur
+        this.invalidateCache();
     }
     
     /**
@@ -114,6 +135,9 @@ export class CanvasEngine {
         logger.debug(`[CanvasEngine] Removing element: ${elementId}`);
         await this.adapter.removeElement(element);
         logger.debug(`[CanvasEngine] Element removed: ${elementId}`);
+        
+        // Invalidate cache when modifications occur
+        this.invalidateCache();
     }
     
     /**
@@ -197,9 +221,10 @@ export class CanvasEngine {
             
             new DynamicStructuredTool({
                 name: "modify_element",
-                description: "Modify an existing element on the canvas. Change position, size, visibility, etc.",
+                description: "Modify an existing element on the canvas. Use elementId (element-0, element-1, etc.) or index (0=newest, 1=second newest, etc.)",
                 schema: z.object({
-                    elementId: z.string().describe("ID of element to modify"),
+                    elementId: z.string().optional().describe("ID of element to modify (element-0, element-1, etc.)"),
+                    index: z.number().optional().describe("Index of element (0=newest, 1=second newest, etc.)"),
                     x: z.number().optional().describe("New X position in pixels"),
                     y: z.number().optional().describe("New Y position in pixels"),
                     width: z.number().optional().describe("New width in pixels"),
@@ -210,6 +235,21 @@ export class CanvasEngine {
                     metadata: z.record(z.any()).optional().describe("Metadata updates")
                 }),
                 func: async (params) => {
+                    // Resolve element ID from index if needed
+                    let targetElementId = params.elementId;
+                    if (!targetElementId && params.index !== undefined) {
+                        targetElementId = await this.resolveElementByIndex(params.index);
+                        if (!targetElementId) {
+                            const canvas = await this.getCanvas();
+                            const managedCount = canvas.elements.filter(e => e.metadata?.managedByEngine !== false).length;
+                            throw new Error(`Element index ${params.index} out of range. Available: 0-${managedCount - 1}`);
+                        }
+                    }
+                    
+                    if (!targetElementId) {
+                        throw new Error("Must provide either elementId or index");
+                    }
+                    
                     const changes: ModifyElementParams = {};
                     
                     // Handle transform changes
@@ -257,11 +297,11 @@ export class CanvasEngine {
                         changes.metadata = params.metadata;
                     }
                     
-                    await this.modifyElement(params.elementId, changes);
+                    await this.modifyElement(targetElementId, changes);
                     
                     return JSON.stringify({
                         success: true,
-                        elementId: params.elementId,
+                        elementId: targetElementId,
                         changesApplied: Object.keys(changes)
                     });
                 }
@@ -269,16 +309,32 @@ export class CanvasEngine {
             
             new DynamicStructuredTool({
                 name: "remove_element",
-                description: "Remove an element from the canvas (close window)",
+                description: "Remove an element from the canvas (close window). Use elementId or index.",
                 schema: z.object({
-                    elementId: z.string().describe("ID of element to remove")
+                    elementId: z.string().optional().describe("ID of element to remove (element-0, element-1, etc.)"),
+                    index: z.number().optional().describe("Index of element (0=newest, 1=second newest, etc.)")
                 }),
                 func: async (params) => {
-                    await this.removeElement(params.elementId);
+                    // Resolve element ID from index if needed
+                    let targetElementId = params.elementId;
+                    if (!targetElementId && params.index !== undefined) {
+                        targetElementId = await this.resolveElementByIndex(params.index);
+                        if (!targetElementId) {
+                            const canvas = await this.getCanvas();
+                            const managedCount = canvas.elements.filter(e => e.metadata?.managedByEngine !== false).length;
+                            throw new Error(`Element index ${params.index} out of range. Available: 0-${managedCount - 1}`);
+                        }
+                    }
+                    
+                    if (!targetElementId) {
+                        throw new Error("Must provide either elementId or index");
+                    }
+                    
+                    await this.removeElement(targetElementId);
                     
                     return JSON.stringify({
                         success: true,
-                        elementId: params.elementId,
+                        elementId: targetElementId,
                         action: 'removed'
                     });
                 }
@@ -365,5 +421,34 @@ export class CanvasEngine {
         }
         this.canvas = null;
         logger.info('[CanvasEngine] Engine destroyed');
+    }
+    
+    /**
+     * Invalidate canvas cache when modifications occur
+     */
+    private invalidateCache(): void {
+        this.canvasStateCache = null;
+    }
+    
+    /**
+     * Resolve element ID from index for LLM-friendly tools
+     * @param index Element index (0=newest, 1=second newest, etc.)
+     * @returns Element ID or null if not found
+     */
+    private async resolveElementByIndex(index: number): Promise<string | null> {
+        const canvas = await this.getCanvas();
+        const sortedElements = canvas.elements
+            .filter(e => e.metadata?.managedByEngine !== false)
+            .sort((a, b) => {
+                // Ensure createdAt exists, default to 0 if missing
+                const aTime = a.metadata?.createdAt || 0;
+                const bTime = b.metadata?.createdAt || 0;
+                return bTime - aTime;
+            });
+        
+        if (index >= 0 && index < sortedElements.length) {
+            return sortedElements[index].id;
+        }
+        return null;
     }
 } 

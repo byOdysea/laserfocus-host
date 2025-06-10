@@ -17,9 +17,12 @@ const defaultLevel = getDefaultLogLevel();
 log.transports.file.level = IS_DEV ? 'debug' : 'info';     // Always log debug to file in dev
 log.transports.console.level = defaultLevel;               // Environment-aware console logging
 
-// Optional: Set format for better readability in development
+// Optimize format for production performance
 if (IS_DEV) {
   log.transports.console.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}';
+} else {
+  // Simpler format in production for performance
+  log.transports.console.format = '[{h}:{i}:{s}] {text}';
 }
 
 /**

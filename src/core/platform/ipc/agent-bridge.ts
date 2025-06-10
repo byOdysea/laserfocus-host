@@ -262,9 +262,6 @@ export class AgentBridge {
                 return;
             }
 
-            // Force reload configuration before validation to ensure fresh data
-            await this.athenaAgent.reloadConfigurationManually();
-            
             // Check if agent has valid configuration before proceeding (using async version to check actual API keys)
             if (!(await this.athenaAgent.hasValidConfigurationAsync())) {
                 const providerInfo = this.athenaAgent.getProviderInfo();

@@ -6,7 +6,6 @@
  * Supports multiple LLM providers with hot configuration reloading
  */
 
-import { DesktopWindow } from "@/lib/types/canvas";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { DynamicStructuredTool } from "@langchain/core/tools";
@@ -20,9 +19,11 @@ import { ConfigurableComponent } from '../infrastructure/config/configurable-com
 import { ConfigurationManager } from "../infrastructure/config/configuration-manager";
 import { LLMProviderFactory } from '../integrations/llm/providers/llm-provider-factory';
 import { MCPManager } from '../integrations/mcp/mcp-manager';
-import { getUIDiscoveryService } from '../platform/discovery/main-process-discovery';
+import { getCanvasStateParser } from "./prompts/canvas-state-parser";
 import { buildCoreSystemPrompt, buildMCPSummary } from "./prompts/core-system";
-import { buildPlatformComponentsDescription, calculateLayoutParameters } from "./prompts/layout-calculations";
+import { buildPlatformComponentsDescription } from "./prompts/layout-calculations";
+import { getSystemPromptCache } from "./prompts/system-prompt-cache";
+import { buildUIComponentsSummary } from "./prompts/ui-components";
 import { ToolStatusCallback } from './types/tool-status';
 
 /**
@@ -40,7 +41,7 @@ interface AthenaAgentDependencies {
  * Interface for system prompt building strategy
  */
 interface SystemPromptBuilder {
-    buildPrompt(canvas: any, providerConfig: ProviderConfig): Promise<string>;
+    buildPrompt(canvas: any, providerConfig: ProviderConfig, threadId?: string): Promise<string>;
 }
 
 /**
@@ -59,6 +60,13 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     private initialized = false;
     private connectionStatus: 'unknown' | 'connected' | 'failed' | 'no-key' | 'local' = 'unknown';
     private mcpEventCleanup: (() => void) | null = null;
+    private lastError?: string; // Simple error tracking
+    
+    // Tool cache for preventing unnecessary LLM recreation
+    private lastToolsHash: string | null = null;
+    
+    // Configuration cache to avoid redundant reloads
+    private lastConfigHash: string | null = null;
     
     // Injected dependencies
     private readonly canvasEngine: CanvasEngine;
@@ -185,7 +193,7 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     }
 
     /**
-     * Force reload configuration from configuration manager
+     * Reload configuration from configuration manager only if changed
      */
     private async reloadConfiguration(): Promise<void> {
         try {
@@ -193,18 +201,27 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
             const fullConfig = configManager.get();
             const providerConfig = fullConfig.provider;
             
-            if (providerConfig) {
-                const currentConfig = this.getConfig();
-                if (!this.deepEqual(currentConfig, providerConfig)) {
-                    this.config = providerConfig;
-                    logger.info(`[Athena] Configuration reloaded - API Key: ${providerConfig.apiKey ? '***' + providerConfig.apiKey.slice(-4) : 'NONE'}, Model: ${providerConfig.model}`);
-                    await this.initializeLLM();
-                } else {
-                    logger.debug('[Athena] Configuration unchanged during reload');
-                }
-            } else {
+            if (!providerConfig) {
                 logger.warn('[Athena] No provider configuration found during reload');
+                return;
             }
+            
+            // Create a hash of the current configuration
+            const configHash = this.hashConfig(providerConfig);
+            
+            // Check if configuration has actually changed
+            if (this.lastConfigHash === configHash) {
+                logger.debug('[Athena] Configuration unchanged, skipping reload');
+                return;
+            }
+            
+            // Configuration has changed
+            const currentConfig = this.getConfig();
+            this.config = providerConfig;
+            this.lastConfigHash = configHash;
+            
+            logger.info(`[Athena] Configuration reloaded - API Key: ${providerConfig.apiKey ? '***' + providerConfig.apiKey.slice(-4) : 'NONE'}, Model: ${providerConfig.model}`);
+            await this.initializeLLM();
         } catch (error) {
             logger.error('[Athena] Failed to reload configuration:', error);
         }
@@ -230,6 +247,18 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
             const canvasTools = this.canvasEngine.getTools();
             const allTools = [...canvasTools, ...this.getAdditionalTools()];
 
+            // Check if tools have changed to avoid unnecessary recreation
+            const toolsHash = this.hashTools(allTools, providerConfig);
+            if (this.llm && this.workflow && this.lastToolsHash === toolsHash) {
+                logger.debug('[Athena] Tools and config unchanged, reusing existing LLM');
+                return;
+            }
+
+            // Clean up existing LLM reference
+            if (this.llm) {
+                logger.debug('[Athena] Releasing previous LLM instance');
+            }
+
             // Create LLM
             this.llm = await this.llmFactory.createLLM({
                 provider: providerConfig,
@@ -240,6 +269,9 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
             if (this.llm) {
                 this.workflow = this.workflowManager.createWorkflow(this.llm, allTools, this.statusCallback);
             }
+
+            // Cache tools hash
+            this.lastToolsHash = toolsHash;
 
             this.connectionStatus = 'connected';
             logger.info(`[Athena] LLM initialized successfully`);
@@ -292,18 +324,23 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
             return this.getNotReadyMessage();
         }
 
-        // Force reload configuration before processing
+        // Check for configuration changes before processing
         await this.reloadConfiguration();
 
         try {
             const config = { configurable: { thread_id: this.threadId } };
             
             if (onChunk) {
-                return await this.workflowManager.streamMessage(this.workflow, userInput, config, onChunk);
+                const result = await this.workflowManager.streamMessage(this.workflow, userInput, config, onChunk);
+                this.lastError = undefined; // Clear error on success
+                return result;
             } else {
-                return await this.workflowManager.processMessage(this.workflow, userInput, config);
+                const result = await this.workflowManager.processMessage(this.workflow, userInput, config);
+                this.lastError = undefined; // Clear error on success
+                return result;
             }
         } catch (error: any) {
+            this.lastError = error.message;
             logger.error(`[Athena] Error processing input:`, error);
             return `❌ I encountered an error: ${error.message}. Please try again.`;
         }
@@ -332,6 +369,7 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
 
     private handleLLMInitializationError(error: any): void {
         this.connectionStatus = 'failed';
+        this.lastError = `LLM initialization failed: ${error.message}`;
         logger.error('[Athena] LLM initialization failed:', error);
         this.llm = null;
         this.workflow = null;
@@ -437,15 +475,16 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     getCanvasType(): string { return this.canvasType; }
     
     /**
-     * Get current provider info including MCP status
+     * Get current provider info including MCP status and last error
      */
-    getProviderInfo(): { service: string; model: string; ready: boolean; mcpServers?: string[] } {
+    getProviderInfo(): { service: string; model: string; ready: boolean; mcpServers?: string[]; lastError?: string } {
         const config = this.getConfig();
         return {
             service: config.service,
             model: config.model,
             ready: this.isReady(),
-            mcpServers: this.mcpManager.getConnectedServers()
+            mcpServers: this.mcpManager.getConnectedServers(),
+            lastError: this.lastError
         };
     }
     
@@ -480,17 +519,8 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
                 
                 if (serverId) {
                     toolsByServer[serverId] = (toolsByServer[serverId] || 0) + 1;
-                } else {
-                    // Only log missing serverId once per tool, not every call
-                    logger.warn(`[Athena] Tool "${tool.name}" missing serverId metadata`);
                 }
             });
-            
-            // Only log if tools counts have changed or if no tools (unusual)
-            const totalTools = Object.values(toolsByServer).reduce((sum, count) => sum + count, 0);
-            if (totalTools === 0 && tools.length > 0) {
-                logger.warn(`[Athena] ${tools.length} tools found but no server assignments`);
-            }
             
             return toolsByServer;
         } catch (error) {
@@ -517,62 +547,83 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
 
     /**
      * Build ultra-efficient system prompt using consolidated approach
-     * 70% reduction in context while maintaining all functionality
+     * Now uses centralized parsing to prevent duplication
      */
-    buildEfficientSystemPrompt(canvas: any, providerConfig: ProviderConfig): string {
-        // Build minimal context
-        const managedElements = canvas.elements || [];
-        const userWindows = managedElements.filter((el: any) => el.type === 'browser' || el.type === 'application');
-        const desktopState = canvas.metadata?.desktopState;
+    async buildEfficientSystemPrompt(canvas: any, providerConfig: ProviderConfig): Promise<string> {
+        // Use centralized parser to get all data at once
+        const parser = getCanvasStateParser();
+        const parsedState = await parser.getParsedState(canvas);
         
-        // Use layout calculations
-        const workArea = desktopState?.workArea || { x: 0, y: 0, width: 1920, height: 1080 };
-        const layoutCalc = calculateLayoutParameters(workArea, desktopState);
-        const platformComponents = buildPlatformComponentsDescription(workArea, layoutCalc);
-        
-        // Build user windows description (concise)
-        const userWindowsDesc = userWindows.length === 0 
-            ? "None"
-            : userWindows.map((w: any) => {
-                const x = w.transform.position.coordinates[0];
-                const y = w.transform.position.coordinates[1];
-                const width = w.transform.size.dimensions[0];
-                const height = w.transform.size.dimensions[1];
-                return `"${w.id}": ${w.content?.source || 'Unknown'} (${x},${y}) ${width}×${height}`;
-            }).join('; ');
+        // Get platform components description
+        const platformComponents = buildPlatformComponentsDescription(
+            parsedState.workArea, 
+            parsedState.layoutCalculations
+        );
         
         // Get MCP tools summary
         const mcpTools = this.mcpManager.getTools();
         const mcpServers = this.mcpManager.getConnectedServers();
         const mcpSummary = buildMCPSummary(mcpTools, mcpServers);
         
-        // Use consolidated prompt builder
+        // Get UI components summary using centralized helper
+        const uiComponentsSummary = buildUIComponentsSummary();
+
+        // Use consolidated prompt builder with parsed data
         const consolidatedPrompt = buildCoreSystemPrompt({
-            userWindowCount: userWindows.length,
-            screenWidth: workArea.width,
-            screenHeight: workArea.height,
-            defaultX: layoutCalc.defaultX,
-            defaultY: layoutCalc.defaultY,
-            maxUsableWidth: layoutCalc.maxUsableWidth,
-            defaultHeight: layoutCalc.defaultHeight,
-            windowGap: layoutCalc.windowGap,
+            userWindowCount: parsedState.windowCount,
+            screenWidth: parsedState.workArea.width,
+            screenHeight: parsedState.workArea.height,
+            defaultX: parsedState.layoutCalculations.defaultX,
+            defaultY: parsedState.layoutCalculations.defaultY,
+            maxUsableWidth: parsedState.layoutCalculations.maxUsableWidth,
+            defaultHeight: parsedState.layoutCalculations.defaultHeight,
+            windowGap: parsedState.layoutCalculations.windowGap,
             platformComponents,
-            userWindows: userWindowsDesc,
+            userWindows: parsedState.userWindowsDescription,
             mcpSummary,
-            uiComponentsSummary: "Available apps: Notes, Reminders, Settings"
+            uiComponentsSummary
         });
 
-        logger.debug(`[Athena] Generated consolidated system prompt: ${consolidatedPrompt.length} characters (70% reduction)`);
+        logger.debug(`[Athena] Generated consolidated system prompt: ${consolidatedPrompt.length} characters`);
         return consolidatedPrompt;
     }
 
-
+    private hashTools(tools: DynamicStructuredTool[], providerConfig: ProviderConfig): string {
+        // Create lightweight hash of tool names and provider config
+        const toolNames = tools.map(t => t.name).sort().join(',');
+        const configKey = `${providerConfig.service}:${providerConfig.model}:${toolNames}`;
+        
+        // Simple fast hash function
+        let hash = 0;
+        for (let i = 0; i < configKey.length; i++) {
+            const char = configKey.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return hash.toString(36);
+    }
+    
+    private hashConfig(config: ProviderConfig): string {
+        // Create lightweight hash of config for change detection
+        const configKey = `${config.service}:${config.model}:${config.apiKey || ''}:${config.baseUrl || ''}:${config.temperature}:${config.maxTokens}`;
+        
+        // Simple fast hash function
+        let hash = 0;
+        for (let i = 0; i < configKey.length; i++) {
+            const char = configKey.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return hash.toString(36);
+    }
 }
 
 /**
  * LangGraph-specific workflow manager implementation
  */
 class LangGraphWorkflowManager implements WorkflowManager {
+    private threadId?: string;
+    
     constructor(
         private statusCallback?: ToolStatusCallback,
         private canvasEngine?: CanvasEngine,
@@ -689,6 +740,9 @@ class LangGraphWorkflowManager implements WorkflowManager {
     }
 
     async processMessage(workflow: any, message: string, config: any): Promise<string> {
+        // Extract thread ID from config
+        this.threadId = config?.configurable?.thread_id;
+        
         const result = await workflow.invoke({ messages: [new HumanMessage(message)] }, config);
         const lastMessage = result.messages[result.messages.length - 1];
         const response = lastMessage?.content || "Task completed.";
@@ -697,6 +751,8 @@ class LangGraphWorkflowManager implements WorkflowManager {
     }
 
     async streamMessage(workflow: any, message: string, config: any, onChunk: (chunk: string) => void): Promise<string> {
+        // Extract thread ID from config
+        this.threadId = config?.configurable?.thread_id;
         let streamedContent = '';
         let detectedTools = new Set<string>();
         let chunkCount = 0;
@@ -758,6 +814,42 @@ class LangGraphWorkflowManager implements WorkflowManager {
         if (this.canvasEngine && this.systemPromptBuilder) {
             const canvas = await this.canvasEngine.getCanvas();
             const providerConfig = ConfigurationManager.getInstance().get().provider;
+            
+            // Check cache first if we have a thread ID
+            if (this.threadId) {
+                const promptCache = getSystemPromptCache();
+                const parser = getCanvasStateParser();
+                const parsedState = await parser.getParsedState(canvas);
+                
+                // Try to get cached prompt
+                const mcpToolsCount = (llm as any)._kwargs?.tools?.length || 0;
+                const cachedPrompt = promptCache.getCachedPrompt(
+                    this.threadId,
+                    parsedState.hash,
+                    providerConfig,
+                    mcpToolsCount
+                );
+                
+                if (cachedPrompt) {
+                    return cachedPrompt;
+                }
+                
+                // Build fresh prompt
+                const freshPrompt = await this.systemPromptBuilder.buildPrompt(canvas, providerConfig, this.threadId);
+                
+                // Cache it
+                promptCache.setCachedPrompt(
+                    this.threadId,
+                    freshPrompt,
+                    parsedState.hash,
+                    providerConfig,
+                    mcpToolsCount
+                );
+                
+                return freshPrompt;
+            }
+            
+            // No thread ID, build fresh
             return this.systemPromptBuilder.buildPrompt(canvas, providerConfig);
         }
         return "You are Athena, an AI assistant with desktop management capabilities.";
@@ -817,71 +909,31 @@ class LangGraphWorkflowManager implements WorkflowManager {
 class DefaultSystemPromptBuilder implements SystemPromptBuilder {
     constructor() {}
 
-    async buildPrompt(canvas: any, providerConfig: ProviderConfig): Promise<string> {
-        // Build minimal context using consolidated approach
-        const managedElements = canvas.elements || [];
-        const userWindows = managedElements.filter((el: any) => el.type === 'browser' || el.type === 'application');
-        const desktopState = canvas.metadata?.desktopState;
+    async buildPrompt(canvas: any, providerConfig: ProviderConfig, threadId?: string): Promise<string> {
+        // Use centralized parser to avoid duplicate processing
+        const parser = getCanvasStateParser();
+        const parsedState = await parser.getParsedState(canvas);
         
-        // Use layout calculations from prompts
-        const workArea = desktopState?.workArea || { x: 0, y: 0, width: 1920, height: 1080 };
-        const layoutCalc = calculateLayoutParameters(workArea, desktopState);
-        const platformComponents = buildPlatformComponentsDescription(workArea, layoutCalc);
-        
-        // Build user windows description (concise)
-        const userWindowsDesc = userWindows.length === 0 
-            ? "None"
-            : userWindows.map((w: any) => {
-                const x = w.transform.position.coordinates[0];
-                const y = w.transform.position.coordinates[1];
-                const width = w.transform.size.dimensions[0];
-                const height = w.transform.size.dimensions[1];
-                return `"${w.id}": ${w.content?.source || 'Unknown'} (${x},${y}) ${width}×${height}`;
-            }).join('; ');
-        
-        // Get available UI components (just the essentials)
-        const uiDiscoveryService = getUIDiscoveryService();
-        let availableApps: string[] = [];
-        
-        if (uiDiscoveryService) {
-            const allApps = uiDiscoveryService.getAllApps();
-            availableApps = allApps.filter((app: string) => 
-                !['AthenaWidget', 'InputPill', 'Byokwidget'].includes(app)
-            );
-            logger.info(`[Athena] Available apps for agent: ${availableApps.join(', ') || 'none'}`);
-        }
+        // Get UI components summary using centralized helper
+        const uiComponentsSummary = buildUIComponentsSummary();
 
-        // Generate MCP summary from actual MCP manager instance
-        const mcpTools: any[] = [];
-        const mcpServers: string[] = [];
-        try {
-            // Note: This would be injected in the actual implementation
-            // mcpTools = this.mcpManager.getTools();
-            // mcpServers = this.mcpManager.getConnectedServers();
-        } catch (error) {
-            logger.debug('[DefaultSystemPromptBuilder] MCP manager not available in default builder');
-        }
-        const mcpSummary = buildMCPSummary(mcpTools, mcpServers);
-        
-        // Use consolidated prompt builder
-        const consolidatedPrompt = buildCoreSystemPrompt({
-            userWindowCount: userWindows.length,
-            screenWidth: workArea.width,
-            screenHeight: workArea.height,
-            defaultX: layoutCalc.defaultX,
-            defaultY: layoutCalc.defaultY,
-            maxUsableWidth: layoutCalc.maxUsableWidth,
-            defaultHeight: layoutCalc.defaultHeight,
-            windowGap: layoutCalc.windowGap,
-            platformComponents,
-            userWindows: userWindowsDesc,
-            mcpSummary,
-            uiComponentsSummary: `Available apps: ${availableApps.join(', ') || 'Notes, Reminders, Settings'}`
-        }) + `\n\n# Provider: ${providerConfig.service} (${providerConfig.model})`;
+        // Build base prompt with parsed data (no MCP or error context for now)
+        const prompt = buildCoreSystemPrompt({
+            userWindowCount: parsedState.windowCount,
+            screenWidth: parsedState.workArea.width,
+            screenHeight: parsedState.workArea.height,
+            defaultX: parsedState.layoutCalculations.defaultX,
+            defaultY: parsedState.layoutCalculations.defaultY,
+            maxUsableWidth: parsedState.layoutCalculations.maxUsableWidth,
+            defaultHeight: parsedState.layoutCalculations.defaultHeight,
+            windowGap: parsedState.layoutCalculations.windowGap,
+            platformComponents: [],
+            userWindows: parsedState.userWindowsDescription,
+            mcpSummary: '', // Empty for now to avoid issues
+            uiComponentsSummary
+        });
 
-        // Debug log key context
-        logger.info(`[Athena] Context - User windows: ${userWindows.length}, Desktop apps: ${desktopState?.windows.filter((w: DesktopWindow) => !w.managedByEngine).length || 0}`);
-        
-        return consolidatedPrompt;
+        logger.debug(`[Athena] Generated system prompt: ${prompt.length} characters`);
+        return prompt;
     }
 } 

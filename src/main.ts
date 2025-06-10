@@ -1,10 +1,23 @@
 import { APP_NAME, IS_DEV, VITE_DEV_SERVER_URL } from '@core/infrastructure/config/config';
 import 'dotenv/config'; // Must be first to load environment variables
+
 // Agent Bridge - Focused agent coordination service
 // Configuration Manager - New configuration system
 import { config } from '@core/infrastructure/config/configuration-manager';
 import * as logger from '@utils/logger';
 import { app, BrowserWindow, Display, ipcMain, screen } from 'electron';
+
+// Configure EventTarget listener limits for LangChain operations
+// LangGraph tool binding creates multiple AbortSignal listeners
+import { setMaxListeners } from 'events';
+try {
+    setMaxListeners(50); // Handle complex multi-tool operations
+    logger.info('[App] Set EventTarget max listeners to 50 for LangChain operations');
+} catch (error) {
+    // Fallback - set on process if setMaxListeners doesn't work globally
+    process.setMaxListeners?.(50);
+}
+
 logger.info('--- [main.ts] Script execution started with Canvas Engine ---');
 
 // Configuration, Utilities, and Services
