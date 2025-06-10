@@ -6,6 +6,35 @@ const conversationLog: HTMLElement | null = document.getElementById('conversatio
 let currentStreamingElement: HTMLElement | null = null;
 let streamingContentElement: HTMLElement | null = null;
 
+// Configuration cache
+let enableToolPills = true; // Default value
+
+// Load configuration on startup
+async function loadConfiguration() {
+    try {
+        const result = await (window as any).electronAPI.getConfig();
+        if (result.success && result.config) {
+            enableToolPills = result.config.enableToolPills;
+            if (process.env.NODE_ENV === 'development') {
+                console.debug('AthenaWidget: Loaded configuration', { enableToolPills });
+            }
+        }
+    } catch (error) {
+        console.warn('AthenaWidget: Failed to load configuration, using defaults', error);
+    }
+}
+
+// Load configuration immediately
+loadConfiguration();
+
+// Listen for configuration changes
+const cleanupConfigListener = window.electronAPI.ipcRendererOn('config-changed', (event: IpcRendererEvent, newConfig: { enableToolPills: boolean }) => {
+    enableToolPills = newConfig.enableToolPills;
+    if (process.env.NODE_ENV === 'development') {
+        console.debug('AthenaWidget: Configuration updated', { enableToolPills });
+    }
+});
+
 const cleanupConversationUpdateListener = window.electronAPI.ipcRendererOn('conversation-update', (event: IpcRendererEvent, update: { type: string, content: string, status?: string, timestamp?: string }) => {
     const { type, content, status } = update;
     
@@ -54,8 +83,8 @@ const cleanupConversationUpdateListener = window.electronAPI.ipcRendererOn('conv
         }
         
     } else if (type === 'tool-call') {
-        // Tool call pill
-        if (currentStreamingElement) {
+        // Tool call pill - only create if enabled
+        if (enableToolPills && currentStreamingElement) {
             // Check if this is the first tool call (no content yet)
             const contentElement = currentStreamingElement.querySelector('.content');
             const isFirstThing = !contentElement || contentElement.textContent?.trim() === '';
@@ -85,23 +114,27 @@ const cleanupConversationUpdateListener = window.electronAPI.ipcRendererOn('conv
                 }
             }
         }
+        // If tool pills are disabled, the tool call is simply ignored (no visual indication)
         
     } else if (type === 'tool-status') {
         // Tool status update - find the tool pill and update its status
-        const toolName = content;
-        
-        if (status) {
-            // Find all tool pills with matching tool name
-            const toolPills = document.querySelectorAll(`.tool-pill[data-tool-name="${toolName}"]`);
-            toolPills.forEach((pill) => {
-                // Remove existing status classes
-                pill.classList.remove('executing', 'completed', 'error');
-                // Add new status class
-                pill.classList.add(status);
-            });
+        // Only process if tool pills are enabled
+        if (enableToolPills) {
+            const toolName = content;
             
-            if (process.env.NODE_ENV === 'development') {
-                console.debug(`AthenaWidget: Updated tool pill ${toolName} to status: ${status}`);
+            if (status) {
+                // Find all tool pills with matching tool name
+                const toolPills = document.querySelectorAll(`.tool-pill[data-tool-name="${toolName}"]`);
+                toolPills.forEach((pill) => {
+                    // Remove existing status classes
+                    pill.classList.remove('executing', 'completed', 'error');
+                    // Add new status class
+                    pill.classList.add(status);
+                });
+                
+                if (process.env.NODE_ENV === 'development') {
+                    console.debug(`AthenaWidget: Updated tool pill ${toolName} to status: ${status}`);
+                }
             }
         }
         

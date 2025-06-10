@@ -42,7 +42,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }
       ipcRenderer.removeListener(channel, wrappedListener);
     };
-  }
+  },
+  // Configuration access
+  getConfig: () => ipcRenderer.invoke('athenawidget:get-config')
 });
 
 if (process.env.NODE_ENV === 'development') {

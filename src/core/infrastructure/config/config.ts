@@ -87,6 +87,7 @@ export const configSchema = z.object({
     streamingSpeed: z.enum(['fast', 'normal', 'slow']).default('normal'),
     // Browser window settings
     browserWindowFrame: z.boolean().default(false),
+    enableToolPills: z.boolean().default(false),  
     // Future: theme, fontSize, widgetPositions, layoutPresets
   }).default({}),
   

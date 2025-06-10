@@ -4,7 +4,7 @@
     {
       "name": "filesystem",
       "description": "Local file system access",
-      "enabled": true,
+      "enabled": false,
       "stdio": {
         "executor": "npx",
         "command": "@modelcontextprotocol/server-filesystem",
