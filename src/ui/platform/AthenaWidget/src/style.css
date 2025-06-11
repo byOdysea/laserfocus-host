@@ -62,6 +62,9 @@ body {
 
 .log-line {
     margin-bottom: 8px;
+    padding: 2px 4px; /* Add base padding */
+    min-height: 1.2em; /* Ensure a minimum height based on line-height */
+    transition: all 0.2s ease-in-out; /* Smooth transition for all properties */
 }
 
 .log-line.user .prefix {
@@ -93,7 +96,6 @@ body {
 .log-line.streaming {
     background-color: rgba(70, 134, 255, 0.1);
     border-radius: 4px;
-    padding: 2px 4px;
     margin-bottom: 4px;
 }
 
