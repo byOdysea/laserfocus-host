@@ -44,11 +44,9 @@ const fieldMetadata: Record<string, Record<string, Partial<UISchemaField>>> = {
     
     // Future Categories (Placeholders)
     ui: {
-        // Agent streaming behavior
-        enableSmoothStreaming: { label: 'Enable Smooth Streaming', type: 'boolean' },
-        streamingSpeed: { label: 'Streaming Speed', type: 'enum', options: ['fast', 'normal', 'slow'] },
         // Browser window settings
         browserWindowFrame: { label: 'Show window controls for Athena-opened browsers', type: 'boolean' },
+        enableToolPills: { label: 'Enable Tool Pills', type: 'boolean' },
         // Future: theme, fontSize, widgetPositions, layoutPresets
     },
     

@@ -89,18 +89,6 @@ body {
     opacity: 0.7;
 }
 
-/* Thinking styles */
-.thinking .thinking-indicator {
-    color: #9d7cbd;
-    font-style: italic;
-    animation: thinking-pulse 2s ease-in-out infinite;
-}
-
-@keyframes thinking-pulse {
-    0%, 100% { opacity: 0.6; }
-    50% { opacity: 1.0; }
-}
-
 /* Streaming styles */
 .log-line.streaming {
     background-color: rgba(70, 134, 255, 0.1);
@@ -140,12 +128,24 @@ body {
 .tool-pill {
     display: inline-block;
     background-color: rgba(70, 134, 255, 0.2);
-    color: #4686FF;
+    color: #a0c8ff;
     padding: 1px 6px;
     border-radius: 10px;
     font-size: 11px;
     margin-right: 4px;
     border: 1px solid rgba(70, 134, 255, 0.3);
+    white-space: nowrap;
+    transition: all 0.3s ease;
+}
+
+.tool-pill.executing,
+.tool-pill.completed,
+.tool-pill.error {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    margin-right: 4px;
     white-space: nowrap;
     transition: all 0.3s ease;
 }
@@ -161,13 +161,13 @@ body {
 .tool-pill.completed {
     background-color: rgba(76, 175, 80, 0.2);
     color: #4CAF50;
-    border-color: rgba(76, 175, 80, 0.4);
+    border: 1px solid rgba(76, 175, 80, 0.4);
 }
 
 .tool-pill.error {
     background-color: rgba(244, 67, 54, 0.2);
     color: #F44336;
-    border-color: rgba(244, 67, 54, 0.4);
+    border: 1px solid rgba(244, 67, 54, 0.4);
 }
 
 @keyframes pulse-tool {

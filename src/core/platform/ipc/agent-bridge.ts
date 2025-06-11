@@ -5,14 +5,14 @@
  * Note: This replaces the monolithic AthenaBridge with a focused service
  */
 
+import { AthenaAgent } from '@/core/agent/athena-agent';
 import { Canvas } from '@/lib/types/canvas';
-import { ConversationUpdate, ToolStatusFormatter } from '@core/agent/types/tool-status';
-import logger from '@utils/logger';
+import { ConversationUpdate } from '@core/agent/types/tool-status';
+import * as logger from '@utils/logger';
 import { ipcMain } from 'electron';
-import { AthenaAgent } from '../../agent/athena-agent';
-import { config } from '../../infrastructure/config/configuration-manager';
+import { config, ConfigurationManager } from '../../infrastructure/config/configuration-manager';
 import { AppModuleInstance } from '../discovery/main-process-discovery';
-import { getWindowRegistry } from '../windows/window-registry';
+import { getWindowRegistry, WindowEventData, WindowEventType } from '../windows/window-registry';
 
 /**
  * Type for the information about the current LLM provider.
@@ -25,102 +25,12 @@ export interface ProviderInfo {
     lastError?: string;
 }
 
-/**
- * Streaming throttler to make the output smoother and more magical
- */
-class StreamingThrottler {
-    private queue: Array<{ content: string, type: 'chunk' | 'tool-call' }> = [];
-    private isProcessing = false;
-    private onChunk: (content: string, type: 'chunk' | 'tool-call') => void;
-    
-    // Configuration for magical streaming experience (configurable speeds)
-    private readonly speedSettings = {
-        fast: { CHUNK_DELAY_MS: 10, CHAR_DELAY_MS: 5 },
-        normal: { CHUNK_DELAY_MS: 25, CHAR_DELAY_MS: 15 },
-        slow: { CHUNK_DELAY_MS: 50, CHAR_DELAY_MS: 30 }
-    };
-    
-    private settings: typeof this.speedSettings.normal;
-    
-    constructor(onChunk: (content: string, type: 'chunk' | 'tool-call') => void, speed: 'fast' | 'normal' | 'slow' = 'normal') {
-        this.onChunk = onChunk;
-        this.settings = this.speedSettings[speed];
-    }
-    
-    /**
-     * Add content to the streaming queue
-     */
-    enqueue(content: string, type: 'chunk' | 'tool-call' = 'chunk'): void {
-        if (type === 'tool-call') {
-            // Tool calls are sent immediately for proper timing
-            this.queue.push({ content, type });
-        } else {
-            // For text content, add each character individually for smooth streaming
-            for (const char of content) {
-                this.queue.push({ content: char, type });
-            }
-        }
-        
-        this.processQueue();
-    }
-    
-    /**
-     * Process the queue with smooth timing
-     */
-    private async processQueue(): Promise<void> {
-        if (this.isProcessing || this.queue.length === 0) {
-            return;
-        }
-        
-        this.isProcessing = true;
-        
-        while (this.queue.length > 0) {
-            const item = this.queue.shift()!;
-            
-            if (item.type === 'tool-call') {
-                // Send tool calls immediately
-                this.onChunk(item.content, item.type);
-                // Small delay after tool calls for natural pacing
-                await this.delay(this.settings.CHUNK_DELAY_MS * 2);
-            } else {
-                // Send individual characters with smooth timing
-                this.onChunk(item.content, item.type);
-                await this.delay(this.settings.CHAR_DELAY_MS);
-            }
-        }
-        
-        this.isProcessing = false;
-    }
-    
-    /**
-     * Utility delay function
-     */
-    private delay(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-    
-    /**
-     * Check if queue is empty and processing is complete
-     */
-    isComplete(): boolean {
-        return this.queue.length === 0 && !this.isProcessing;
-    }
-    
-    /**
-     * Wait for all queued content to be processed
-     */
-    async flush(): Promise<void> {
-        while (!this.isComplete()) {
-            await this.delay(10);
-        }
-    }
-}
-
 export class AgentBridge {
     private athenaAgent: AthenaAgent | null = null;
     private initialized = false;
     private athenaWidgetWindow: AppModuleInstance | null = null;
     private statusHandler: ConversationStatusHandler;
+    private greetingMessageSent = false; // Flag to ensure greeting is sent only once
     
     constructor() {
         this.statusHandler = new ConversationStatusHandler();
@@ -177,37 +87,104 @@ export class AgentBridge {
         // Main Athena chat handler
         ipcMain.handle('athena:chat', async (event, message: string) => {
             logger.info(`[AgentBridge] Received chat: "${message}"`);
-            
+
             if (!this.athenaAgent) {
+                const errorMsg = "⚠️ Athena is not initialized. Please check your configuration.";
+                logger.warn('[AgentBridge] ' + errorMsg);
+
+                // Send error to both InputPill and AthenaWidget
+                this.broadcastConversationUpdate({
+                    type: 'agent-stream-error',
+                    content: errorMsg,
+                    timestamp: new Date().toISOString()
+                });
+
                 return {
                     success: false,
-                    response: "⚠️ Athena is not initialized. Please check your configuration.",
+                    response: errorMsg,
                     needsApiKey: true
                 };
             }
-            
-            if (!this.athenaAgent.hasValidConfiguration()) {
+
+            if (!(await this.athenaAgent.hasValidConfigurationAsync())) {
                 const providerInfo = this.athenaAgent.getProviderInfo();
+                const errorMsg = `⚠️ Invalid configuration for ${providerInfo.service}. Please check your settings.`;
+
+                this.broadcastConversationUpdate({
+                    type: 'agent-stream-error',
+                    content: errorMsg,
+                    timestamp: new Date().toISOString()
+                });
+
                 return {
                     success: false,
-                    response: `⚠️ Invalid configuration for ${providerInfo.service}. Please check your settings.`,
+                    response: errorMsg,
                     needsApiKey: providerInfo.service !== 'ollama'
                 };
             }
-            
+
             try {
-                const response = await this.athenaAgent.invoke(message);
+                // Send user message to AthenaWidget
+                this.broadcastConversationUpdate({
+                    type: 'user',
+                    content: message,
+                    timestamp: new Date().toISOString()
+                });
+
+                // Send thinking status
+                this.broadcastConversationUpdate({
+                    type: 'agent-thinking',
+                    content: 'Thinking...'
+                });
+
+                // The agent will now send 'agent-stream-start' at the appropriate time.
+                const response = await this.athenaAgent.invoke(
+                    message,
+                    (chunk) => this.broadcastConversationUpdate({
+                        type: 'agent-stream',
+                        content: chunk,
+                        timestamp: new Date().toISOString()
+                    }),
+                    (update) => {
+                        // The bridge is the gatekeeper for what the UI sees
+                        if (update.type === 'tool-call') {
+                            const config = ConfigurationManager.getInstance().get();
+                            if (config.ui?.enableToolPills) {
+                                this.broadcastConversationUpdate(update);
+                            }
+                        } else {
+                            // For all other events, broadcast them directly
+                            this.broadcastConversationUpdate(update);
+                        }
+                    }
+                );
+
+                // Send completion marker
+                this.broadcastConversationUpdate({
+                    type: 'agent-stream-end',
+                    content: '',
+                    timestamp: new Date().toISOString()
+                });
+
                 return {
                     success: true,
-                    response,
-                    needsApiKey: false
+                    response
                 };
-            } catch (error: any) {
-                logger.error('[AgentBridge] Chat error:', error);
+            } catch (error) {
+                logger.error('[AgentBridge] Error processing chat:', error);
+                
+                const errorMsg = error instanceof Error ? error.message : 'An error occurred while processing your request.';
+                
+                // Send error to both InputPill and AthenaWidget
+                this.broadcastConversationUpdate({
+                    type: 'agent-stream-error',
+                    content: errorMsg,
+                    timestamp: new Date().toISOString()
+                });
+                
                 return {
                     success: false,
-                    response: `❌ Error: ${error.message}`,
-                    needsApiKey: false
+                    response: errorMsg
                 };
             }
         });
@@ -259,158 +236,6 @@ export class AgentBridge {
                 canvasType: this.athenaAgent.getCanvasType(),
                 connectionStatus: this.athenaAgent.getConnectionStatus()
             };
-        });
-        
-        // Direct agent communication handlers
-        ipcMain.on('run-agent', async (event, userInput: string) => {
-            logger.info(`[AgentBridge] Processing run-agent request: "${userInput}"`);
-            
-            if (!this.athenaAgent) {
-                const errorMsg = "⚠️ Athena is not initialized. Please check your configuration.";
-                logger.warn('[AgentBridge] ' + errorMsg);
-                
-                if (event.sender && !event.sender.isDestroyed()) {
-                    event.sender.send('agent-response', errorMsg);
-                }
-                return;
-            }
-
-            // Check if agent has valid configuration before proceeding (using async version to check actual API keys)
-            if (!(await this.athenaAgent.hasValidConfigurationAsync())) {
-                const providerInfo = this.athenaAgent.getProviderInfo();
-                const errorMsg = providerInfo.service === 'ollama'
-                    ? "⚠️ Invalid Ollama configuration. Please check your model settings."
-                    : "⚠️ API key not found. Please set up your API key in settings.";
-                
-                logger.warn(`[AgentBridge] ${errorMsg}`);
-                
-                // Send user message first
-                this.statusHandler.sendUpdate({
-                    type: 'user',
-                    content: userInput
-                });
-
-                // Send streaming start signal
-                this.statusHandler.sendUpdate({
-                    type: 'agent-stream-start',
-                    content: ''
-                });
-
-                // Send thinking indicator first
-                this.statusHandler.sendUpdate({
-                    type: 'agent-thinking',
-                    content: 'Thinking...'
-                });
-
-                // Send error message through streaming system
-                const streamHandler = this.createStreamHandler();
-                streamHandler.sendChunk(errorMsg);
-                await streamHandler.finish();
-
-                // Send streaming end signal
-                this.statusHandler.sendUpdate({
-                    type: 'agent-stream-end',
-                    content: ''
-                });
-                
-                return;
-            }
-
-            try {
-                // Send user message to conversation monitors
-                this.statusHandler.sendUpdate({
-                    type: 'user',
-                    content: userInput
-                });
-
-                // Send thinking indicator
-                this.statusHandler.sendUpdate({
-                    type: 'agent-thinking',
-                    content: 'Thinking...'
-                });
-
-                let fullResponse = '';
-                let streamingChunkCount = 0;
-                const logStreamingEvery = 50;
-                let streamingStarted = false;
-                
-                // Create smooth streaming handler based on configuration
-                const streamHandler = this.createStreamHandler();
-                
-                // Use streaming invoke with enhanced chunk callback
-                fullResponse = await this.athenaAgent.streamInvoke(userInput, (chunk: string) => {
-                    streamingChunkCount++;
-                    
-                    // Handle tool status messages
-                    if (ToolStatusFormatter.isStatusMessage(chunk)) {
-                        const statusUpdate = ToolStatusFormatter.parseStatusMessage(chunk);
-                        if (statusUpdate) {
-                            this.statusHandler.sendUpdate({
-                                type: 'tool-status',
-                                content: statusUpdate.toolName,
-                                status: statusUpdate.status,
-                                timestamp: statusUpdate.timestamp
-                            });
-                            logger.debug(`[AgentBridge] Tool status update sent: ${statusUpdate.toolName} - ${statusUpdate.status}`);
-                        }
-                        return;
-                    }
-                    
-                    // Handle tool call indicators
-                    if (chunk.startsWith('🔧 ')) {
-                        const toolName = chunk.substring(3);
-                        streamHandler.sendToolCall(toolName);
-                        logger.debug(`[AgentBridge] Tool call sent: ${toolName}`);
-                        return;
-                    }
-
-                    // If we've reached here, it's a content chunk.
-                    // Signal the UI to start streaming if this is the first content chunk.
-                    if (!streamingStarted) {
-                        this.statusHandler.sendUpdate({
-                            type: 'agent-stream-start',
-                            content: ''
-                        });
-                        streamingStarted = true;
-                    }
-                    
-                    // Send regular streaming chunk
-                    streamHandler.sendChunk(chunk);
-                    
-                    // Log progress occasionally
-                    if (streamingChunkCount === 1 || streamingChunkCount % logStreamingEvery === 0) {
-                        logger.debug(`[AgentBridge] Streaming chunk ${streamingChunkCount} processed`);
-                    }
-                });
-
-                // Finalize streaming
-                await streamHandler.finish();
-
-                // If no content was ever streamed (e.g., only tool calls occurred),
-                // we still need to transition the UI out of the "thinking" state.
-                if (!streamingStarted) {
-                    this.statusHandler.sendUpdate({
-                        type: 'agent-stream-start',
-                        content: ''
-                    });
-                }
-
-                // Send streaming end signal
-                this.statusHandler.sendUpdate({
-                    type: 'agent-stream-end',
-                    content: ''
-                });
-
-                logger.info(`[AgentBridge] Streaming completed with ${streamingChunkCount} chunks processed`);
-
-            } catch (error: any) {
-                logger.error('[AgentBridge] Error processing agent request:', error);
-                
-                this.statusHandler.sendUpdate({
-                    type: 'agent-stream-error',
-                    content: `❌ Error: ${error.message}`
-                });
-            }
         });
         
         logger.info('[AgentBridge] Agent IPC handlers set up');
@@ -492,115 +317,71 @@ export class AgentBridge {
      * Send a greeting message to conversation monitors using the same streaming pattern as real agent responses
      */
     async sendGreetingMessage(): Promise<void> {
-        const greetingContent = 'How can I help you today?';
-        
-        // Send streaming start signal (matches real agent behavior)
-        this.statusHandler.sendUpdate({
-            type: 'agent-stream-start',
-            content: ''
-        });
-        
-        // Use the same stream handler system as real agent responses
-        const streamHandler = this.createStreamHandler();
-        
-        // Send the greeting content through the stream handler (with a small delay to simulate typing)
-        setTimeout(async () => {
-            streamHandler.sendChunk(greetingContent);
-            
-            // Finalize streaming (handles smooth streaming if enabled)
-            await streamHandler.finish();
-            
-            // Send streaming end signal (matches real agent behavior)
-            this.statusHandler.sendUpdate({
-                type: 'agent-stream-end',
-                content: ''
-            });
-            
-        }, 200); // Small delay to simulate natural agent response time
-        
-        logger.info('[AgentBridge] Greeting message sent to conversation monitors using real streaming pattern');
-    }
-    
-    /**
-     * Create appropriate stream handler based on configuration
-     */
-    private createStreamHandler(): StreamHandler {
-        const uiConfig = config.get().ui;
-        
-        if (uiConfig.enableSmoothStreaming) {
-            return new SmoothStreamHandler(this.statusHandler, uiConfig.streamingSpeed);
+        if (this.greetingMessageSent) {
+            logger.info('[AgentBridge] Greeting message already sent, skipping.');
+            return;
+        }
+
+        const windowRegistry = getWindowRegistry();
+        const monitors = windowRegistry.getWindowsByCapability('conversation-monitor');
+
+        const sendActualGreeting = () => {
+            if (this.greetingMessageSent) return; // Double check
+
+            const greetingContent = 'How can I help you today?';
+            const greetingUpdate: ConversationUpdate = {
+                type: 'agent',
+                content: greetingContent,
+                timestamp: new Date().toISOString()
+            };
+            this.statusHandler.sendUpdate(greetingUpdate);
+            this.greetingMessageSent = true;
+            logger.info('[AgentBridge] Greeting message sent to conversation monitor(s).');
+        };
+
+        if (monitors.length > 0) {
+            logger.info('[AgentBridge] Conversation monitor found, sending greeting immediately.');
+            sendActualGreeting();
         } else {
-            return new DirectStreamHandler(this.statusHandler);
+            logger.info('[AgentBridge] No conversation monitor found. Waiting for one to register...');
+            
+            const onMonitorRegistered = (eventData: WindowEventData) => {
+                if (eventData.windowInfo.capabilities.includes('conversation-monitor')) {
+                    if (!this.greetingMessageSent) {
+                        logger.info(`[AgentBridge] Conversation monitor '${eventData.windowInfo.id}' registered. Sending greeting.`);
+                        sendActualGreeting();
+                    }
+                    // Important: Unsubscribe after sending or if already sent to avoid multiple triggers/leaks
+                    windowRegistry.off('window-registered', onMonitorRegistered);
+                }
+            };
+            
+            windowRegistry.on('window-registered', onMonitorRegistered);
         }
     }
-}
 
-/**
- * Stream handler interface for easy swapping
- */
-interface StreamHandler {
-    sendChunk(content: string): void;
-    sendToolCall(toolName: string): void;
-    finish(): Promise<void>;
-}
-
-/**
- * Direct streaming - original behavior
- */
-class DirectStreamHandler implements StreamHandler {
-    constructor(private statusHandler: ConversationStatusHandler) {}
-    
-    sendChunk(content: string): void {
-        this.statusHandler.sendUpdate({
-            type: 'agent-stream',
-            content: content
-        });
-    }
-    
-    sendToolCall(toolName: string): void {
-        this.statusHandler.sendUpdate({
-            type: 'tool-call',
-            content: toolName
-        });
-    }
-    
-    async finish(): Promise<void> {
-        // Nothing to wait for in direct mode
-    }
-}
-
-/**
- * Smooth streaming - enhanced behavior
- */
-class SmoothStreamHandler implements StreamHandler {
-    private throttler: StreamingThrottler;
-    
-    constructor(private statusHandler: ConversationStatusHandler, speed: 'fast' | 'normal' | 'slow' = 'normal') {
-        this.throttler = new StreamingThrottler((content: string, type: 'chunk' | 'tool-call') => {
-            if (type === 'tool-call') {
-                this.statusHandler.sendUpdate({
-                    type: 'tool-call',
-                    content: content
-                });
+    private broadcastConversationUpdate(update: ConversationUpdate): void {
+        try {
+            const windowRegistry = getWindowRegistry();
+            
+            // Send to all windows with conversation-monitor capability
+            const sentCount = windowRegistry.sendToWindowsWithCapability(
+                'conversation-monitor', 
+                'conversation-update', 
+                update
+            );
+            
+            if (sentCount === 0) {
+                logger.warn('[ConversationStatusHandler] No conversation monitor windows found');
             } else {
-                this.statusHandler.sendUpdate({
-                    type: 'agent-stream',
-                    content: content
-                });
+                // Only log important conversation updates, not streaming chunks
+                if (update.type !== 'agent-stream') {
+                    logger.info(`[ConversationStatusHandler] Sent conversation update (${update.type}) to ${sentCount} monitor(s)`);
+                }
             }
-        }, speed);
-    }
-    
-    sendChunk(content: string): void {
-        this.throttler.enqueue(content, 'chunk');
-    }
-    
-    sendToolCall(toolName: string): void {
-        this.throttler.enqueue(toolName, 'tool-call');
-    }
-    
-    async finish(): Promise<void> {
-        await this.throttler.flush();
+        } catch (error) {
+            logger.warn('[ConversationStatusHandler] Failed to send conversation update:', error);
+        }
     }
 }
 

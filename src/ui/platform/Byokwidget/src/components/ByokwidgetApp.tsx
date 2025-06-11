@@ -2,20 +2,22 @@ import React from 'react';
 
 interface SimpleByokState {
     // API Key
-    apiKey: string;
-    hasStoredApiKey: boolean;
-    apiKeyChanged: boolean;
+    apiKey: string; // Current value in input
+    hasStoredApiKey: boolean; // For placeholder logic
+    apiKeyChanged: boolean; // Tracks if input differs from stored
     
     // Provider/Model (read-only, for display)
     provider: string;
     model: string;
     
-    // Status
-    isValid: boolean | null;
-    isLoading: boolean;
-    error: string | null;
-    saving: boolean;
-    testing: boolean;
+    // Status - derived from AgentStatusInfo
+    isValid: boolean; // true: agent ready (green), false: not ready (red)
+    isLoading: boolean; // For initial load
+    statusText: string; // Descriptive status message
+    
+    // UI interaction states
+    saving: boolean; // True during API key save operation
+    testing: boolean; // True during the brief API key save/test period (legacy, kept for now)
 }
 
 export const ByokwidgetApp: React.FC = () => {
@@ -25,9 +27,9 @@ export const ByokwidgetApp: React.FC = () => {
         apiKeyChanged: false,
         provider: '',
         model: '',
-        isValid: null,
+        isValid: false, // Default to not valid
         isLoading: true,
-        error: null,
+        statusText: 'Initializing...', // Initial status text
         saving: false,
         testing: false,
     });
@@ -53,17 +55,7 @@ export const ByokwidgetApp: React.FC = () => {
         };
     }, []);
 
-    // Check connection status periodically and when API key changes
-    React.useEffect(() => {
-        if (state.hasStoredApiKey) {
-            // Check status after a brief delay to allow agent to process any changes
-            const timeoutId = setTimeout(() => {
-                checkConnectionStatus();
-            }, 1000);
-            
-            return () => clearTimeout(timeoutId);
-        }
-    }, [state.hasStoredApiKey, state.apiKeyChanged]);
+    // The checkConnectionStatus is now called by loadInitialState and handleSaveApiKey directly.
 
     const loadInitialState = async () => {
         try {
@@ -99,10 +91,11 @@ export const ByokwidgetApp: React.FC = () => {
                 console.error('[Byokwidget] Failed to load configuration:', configResult);
                 setState((prev: SimpleByokState) => ({
                     ...prev,
-                    error: 'Failed to load configuration',
+                    statusText: 'Failed to load configuration',
+                    isValid: false,
                     isLoading: false,
                 }));
-                return;
+                // No early return, fall through to checkConnectionStatus
             }
 
             // Only show stored API key in input if it's actually being used by the configuration
@@ -123,13 +116,16 @@ export const ByokwidgetApp: React.FC = () => {
                 ...prev,
                 provider,
                 model,
-                hasStoredApiKey,
                 apiKey,
-                isLoading: false,
+                hasStoredApiKey,
+                apiKeyChanged: false, // Reset changed flag
+                isLoading: false, // Done with initial load
+                // Status will be updated by checkConnectionStatus
             }));
 
-            // Always check connection status to get accurate state
-            checkConnectionStatus();
+            // Always refresh connection status after loading initial state and setting provider/model
+            await checkConnectionStatus();
+
         } catch (error) {
             console.error('[Byokwidget] Error loading initial state:', error);
             setState((prev: SimpleByokState) => ({
@@ -141,52 +137,54 @@ export const ByokwidgetApp: React.FC = () => {
     };
 
     const checkConnectionStatus = async () => {
-        setState((prev: SimpleByokState) => ({ ...prev, testing: true }));
+        console.log('[Byokwidget] Checking agent provider status...');
+        setState((prev: SimpleByokState) => ({ ...prev, statusText: 'Checking...' }));
 
         try {
-            // Get the actual connection status from the agent
-            const result = await window.byokwidgetAPI.getStatus();
-            console.log('[Byokwidget] Status check result:', result);
-            
-            if (result.success && result.status) {
-                const { connectionStatus, provider, model } = result.status;
-                console.log('[Byokwidget] Connection status from agent:', connectionStatus);
-                console.log('[Byokwidget] Provider/model from status:', provider, model);
-                
-                // Map connection status to UI state
-                let isValid: boolean | null = null;
-                if (connectionStatus === 'connected' || connectionStatus === 'local') {
-                    isValid = true; // Green - working
-                } else if (connectionStatus === 'configured') {
-                    isValid = null; // Yellow - configured but not tested yet
-                } else if (connectionStatus === 'failed') {
-                    isValid = false; // Red - failed
-                } else if (connectionStatus === 'no-key') {
-                    isValid = false; // Red - no key
-                }
-                
-                console.log('[Byokwidget] Mapped isValid to:', isValid);
-                setState((prev: SimpleByokState) => ({
-                    ...prev,
-                    provider: provider || prev.provider,  // Update provider from status
-                    model: model || prev.model,          // Update model from status
-                    isValid,
-                    testing: false,
-                }));
+            const agentStatus = await window.byokwidgetAPI.getAgentProviderStatus();
+            console.log('[Byokwidget] Agent provider status result:', agentStatus);
+
+            let currentStatusText = '';
+            const isValidConnection = agentStatus.ready;
+
+            if (isValidConnection) {
+                currentStatusText = 'Connected';
             } else {
-                console.log('[Byokwidget] Status check failed or no status:', result);
+                if (agentStatus.lastError) {
+                    currentStatusText = agentStatus.lastError;
+                } else if (agentStatus.connectionStatus === 'no-key') {
+                    currentStatusText = 'API Key Missing';
+                } else if (agentStatus.connectionStatus === 'disabled') {
+                    currentStatusText = 'Provider Disabled';
+                } else if (!agentStatus.hasValidConfig) {
+                    currentStatusText = 'Invalid Configuration';
+                } else if (agentStatus.connectionStatus === 'configured') {
+                    currentStatusText = 'Configured (Review Needed)';
+                } else if (agentStatus.connectionStatus === 'error') {
+                    currentStatusText = 'Connection Error';
+                } else if (agentStatus.connectionStatus === 'failed') {
+                    currentStatusText = 'Connection Failed';
+                } else if (agentStatus.connectionStatus === 'disconnected') {
+                    currentStatusText = 'Disconnected';
+                } else {
+                    currentStatusText = 'Needs Configuration';
+                }
+            }
+
             setState((prev: SimpleByokState) => ({
                 ...prev,
-                    isValid: false,
-                testing: false,
+                isValid: isValidConnection,
+                statusText: currentStatusText,
+                provider: agentStatus.provider,
+                model: agentStatus.model,
             }));
-            }
+
         } catch (error) {
-            console.error('[Byokwidget] Error checking connection status:', error);
+            console.error('[Byokwidget] Error checking agent provider status:', error);
             setState((prev: SimpleByokState) => ({
                 ...prev,
                 isValid: false,
-                testing: false,
+                statusText: 'Failed to get agent status',
             }));
         }
     };
@@ -202,12 +200,12 @@ export const ByokwidgetApp: React.FC = () => {
     };
 
     const handleSaveApiKey = async () => {
-        if (!state.apiKey.trim()) {
-            setState((prev: SimpleByokState) => ({ ...prev, error: 'Please enter an API key' }));
-            return;
-        }
-
-        setState((prev: SimpleByokState) => ({ ...prev, saving: true, error: null }));
+        setState((prev: SimpleByokState) => ({
+            ...prev,
+            saving: true,
+            testing: true, // Keep testing true for the spinner during save
+            statusText: 'Saving API Key...', // Clear previous error/status
+        }));
 
         try {
             const result = await window.byokwidgetAPI.saveApiKey(state.apiKey.trim());
@@ -215,48 +213,45 @@ export const ByokwidgetApp: React.FC = () => {
             if (result.success) {
                 setState((prev: SimpleByokState) => ({
                     ...prev,
+                    apiKey: state.apiKey, // Use the successfully saved key from current state
                     hasStoredApiKey: true,
                     apiKeyChanged: false,
+                    statusText: 'API Key Saved.', // Updated status
                     saving: false,
+                    testing: false, // Done testing
                 }));
-                
-                // Check connection status after saving
-                setTimeout(() => checkConnectionStatus(), 500);
+                // Check status immediately after successful save
+                await checkConnectionStatus();
             } else {
                 setState((prev: SimpleByokState) => ({
                     ...prev,
-                    error: result.error || 'Failed to save API key',
+                    statusText: result.error || 'Failed to save API key',
+                    isValid: false, // Saving failed, likely not valid
                     saving: false,
+                    testing: false,
                 }));
             }
         } catch (error) {
+            console.error('[Byokwidget] Error saving API key:', error);
             setState((prev: SimpleByokState) => ({
                 ...prev,
-                error: 'Failed to save API key',
+                statusText: 'Failed to save API key',
+                isValid: false, // Saving failed, likely not valid
                 saving: false,
+                testing: false,
             }));
         }
     };
 
-    const openSettings = () => {
-        // This will be handled by the main process to open the Settings app
-        window.byokwidgetAPI.openSettings?.();
-    };
-
     const getStatusClass = () => {
-        if (state.testing) return 'testing';
-        if (state.isValid === true) return 'connected';  // Green
-        if (state.isValid === false) return 'error';     // Red
-        if (state.isValid === null) return 'configured'; // Yellow
-        return 'unknown';
+        if (state.testing) return 'testing'; // For the brief save operation
+        if (state.isValid) return 'connected';  // Green
+        return 'error';     // Red for all other non-valid states
     };
 
     const getStatusText = () => {
-        if (state.testing) return 'testing';
-        if (state.isValid === true) return 'connected';
-        if (state.isValid === false) return 'error';
-        if (state.isValid === null) return 'configured';
-        return 'unknown';
+        if (state.testing) return 'Saving...'; // Or 'Testing...' if that's preferred for the save op
+        return state.statusText;
     };
 
     const getProviderDisplayName = (provider: string) => {
@@ -274,7 +269,6 @@ export const ByokwidgetApp: React.FC = () => {
 
     return (
         <div className="byok-widget">
-            {/* Provider Header */}
             <div className="provider-header">
                 <div className="provider-title">
                     <div className="provider-name">{getProviderDisplayName(state.provider)}</div>
@@ -282,11 +276,14 @@ export const ByokwidgetApp: React.FC = () => {
                         <div className={`status-dot ${getStatusClass()}`} />
                     </div>
                 </div>
-                <div className="status-text">{getStatusText()}</div>
+                {/* This specific status text in the header might be redundant now, 
+                    or could display a simplified version. For now, let's hide it if detailed one is below input.
+                    Alternatively, it could show the `state.provider` / `state.model` or a simpler status.
+                    Let's keep it for now but it will show the full statusText. */}
+                <div className={`status-text ${getStatusClass()}`}>{getStatusText()}</div>
             </div>
 
-            {/* API Key Section */}
-            <div className="api-key-section">
+            <div className="byok-content">
                 <div className="api-key-label">API Key</div>
                 <div className="input-wrapper">
                     <input
@@ -303,11 +300,6 @@ export const ByokwidgetApp: React.FC = () => {
                     >
                         {state.saving ? '...' : 'save'}
                     </button>
-                </div>
-                
-                {/* Always render error container to reserve space */}
-                <div className="error-message" data-empty={!state.error}>
-                    {state.error || ''}
                 </div>
                 
                 {/* Always render help text container to reserve space */}

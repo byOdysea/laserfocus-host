@@ -36,11 +36,6 @@ export class ByokwidgetWindow {
             resizable: false,
             show: false, // Don't show until ready
         });
-
-        // Show window when ready to prevent visual flash
-        this.window.once('ready-to-show', () => {
-            this.window.show();
-        });
     }
 
     async init(): Promise<void> {
@@ -65,6 +60,13 @@ export class ByokwidgetWindow {
             });
             
             logger.info('[ByokwidgetWindow] Registered with Window Registry');
+
+            // Show window when ready
+            this.window.once('ready-to-show', () => {
+                this.show();
+                logger.info('[ByokwidgetWindow] Window is ready and shown');
+            });
+
         } catch (error) {
             logger.error('[ByokwidgetWindow] Failed to load HTML file:', error);
             throw error;
@@ -76,6 +78,26 @@ export class ByokwidgetWindow {
         }
     }
 
+    show(): void {
+        if (this.window && !this.window.isDestroyed()) {
+            // If window is minimized, restore it
+            if (this.window.isMinimized()) {
+                this.window.restore();
+            }
+            
+            // Show the window if it's hidden
+            if (!this.window.isVisible()) {
+                this.window.show();
+            }
+            
+            // Focus the window
+            this.window.focus();
+            this.window.webContents.focus();
+            
+            logger.info('[ByokwidgetWindow] Window shown and focused');
+        }
+    }
+
     focus(): void {
         if (this.window && !this.window.isDestroyed()) {
             // If window is minimized, restore it
@@ -83,13 +105,14 @@ export class ByokwidgetWindow {
                 this.window.restore();
             }
             
-            // If window is hidden, show it
+            // Show the window if it's hidden
             if (!this.window.isVisible()) {
                 this.window.show();
             }
             
-            // Bring window to front and focus
+            // Focus the window
             this.window.focus();
+            this.window.webContents.focus();
             
             logger.info('[ByokwidgetWindow] Window focused and brought to front');
         } else {

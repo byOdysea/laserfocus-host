@@ -123,6 +123,9 @@ export class ConfigurableComponent<T = any> {
     const newSectionConfig = this.getNestedValue(newConfig, this.configPath);
     
     if (newSectionConfig !== undefined) {
+      logger.debug(`[ConfigurableComponent] ${this.constructor.name} (${this.configPath}) handleConfigChange: 
+  Old section: ${JSON.stringify(this.config)}
+  New section: ${JSON.stringify(newSectionConfig)}`);
       // Only trigger change handler if configuration actually changed
       if (!this.deepEqual(this.config, newSectionConfig)) {
         const oldConfig = this.config;

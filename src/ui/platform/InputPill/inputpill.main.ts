@@ -82,7 +82,7 @@ export class InputPill {
 
         this.window.once('ready-to-show', () => {
             if (this.window) {
-                this.window.show(); // Decide if it should show immediately or be controlled externally
+                this.show(); // Show and focus immediately
                 logger.info('[InputPill.main] Window is ready and shown.');
             }
         });
@@ -99,9 +99,30 @@ export class InputPill {
     }
 
     public show(): void {
-        if (this.window && !this.window.isVisible()) {
+        if (this.window && !this.window.isDestroyed()) {
             logger.info('[InputPill.main] Showing window.');
-            this.window.show();
+            
+            // If window is minimized, restore it
+            if (this.window.isMinimized()) {
+                this.window.restore();
+            }
+            
+            // Show the window if it's hidden
+            if (!this.window.isVisible()) {
+                this.window.show();
+            }
+            
+            // Focus the window and input
+            this.window.focus();
+            this.window.webContents.focus();
+            
+            // Focus the input element
+            this.window.webContents.executeJavaScript(`
+                const input = document.getElementById('query-input');
+                if (input) {
+                    input.focus();
+                }
+            `);
         }
     }
 

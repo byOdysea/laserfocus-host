@@ -3,8 +3,8 @@ import 'dotenv/config'; // Must be first to load environment variables
 
 // Agent Bridge - Focused agent coordination service
 // Configuration Manager - New configuration system
+import { createLogger, initializeWithConfig } from '@/lib/utils/logger';
 import { config } from '@core/infrastructure/config/configuration-manager';
-import * as logger from '@utils/logger';
 import { app, BrowserWindow, Display, ipcMain, screen } from 'electron';
 
 // Configure EventTarget listener limits for LangChain operations
@@ -12,11 +12,13 @@ import { app, BrowserWindow, Display, ipcMain, screen } from 'electron';
 import { setMaxListeners } from 'events';
 try {
     setMaxListeners(50); // Handle complex multi-tool operations
-    logger.info('[App] Set EventTarget max listeners to 50 for LangChain operations');
+    createLogger('[Main]').info('[App] Set EventTarget max listeners to 50 for LangChain operations');
 } catch (error) {
     // Fallback - set on process if setMaxListeners doesn't work globally
     process.setMaxListeners?.(50);
 }
+
+const logger = createLogger('[Main]');
 
 logger.info('--- [main.ts] Script execution started with Canvas Engine ---');
 
@@ -35,11 +37,11 @@ let uiDiscoveryService: UIDiscoveryService | undefined;
 let agentBridge: AgentBridge | undefined;
 
 const initializeApp = async (): Promise<void> => {
-    logger.info(`[initializeApp] Current NODE_ENV: ${process.env.NODE_ENV}`);
-    logger.info(`[initializeApp] IS_DEV: ${IS_DEV}`);
-    logger.info(`[initializeApp] VITE_DEV_SERVER_URL: ${VITE_DEV_SERVER_URL}`);
-    logger.info(`[initializeApp] DIST path: ${process.env.DIST}`);
-    logger.info(`[initializeApp] __dirname: ${__dirname}`);
+    logger.info(`Current NODE_ENV: ${process.env.NODE_ENV}`);
+    logger.info(`IS_DEV: ${IS_DEV}`);
+    logger.info(`VITE_DEV_SERVER_URL: ${VITE_DEV_SERVER_URL}`);
+    logger.info(`DIST path: ${process.env.DIST}`);
+    logger.info(`__dirname: ${__dirname}`);
 
     const primaryDisplay: Display = screen.getPrimaryDisplay();
     
@@ -49,24 +51,24 @@ const initializeApp = async (): Promise<void> => {
         await apiKeyManager.initialize();
         
         // Initialize logger with configuration integration
-        logger.initializeWithConfig();
+        initializeWithConfig();
         
         const providerConfig = config.getProvider();
-        logger.info(`[initializeApp] Configuration loaded - Provider: ${providerConfig.service}, Model: ${providerConfig.model}`);
+        logger.info(`Configuration loaded - Provider: ${providerConfig.service}, Model: ${providerConfig.model}`);
     } catch (error) {
-        logger.warn(`[initializeApp] Configuration loading failed: ${error instanceof Error ? error.message : String(error)}. Using defaults.`);
+        logger.warn(`Configuration loading failed: ${error instanceof Error ? error.message : String(error)}. Using defaults.`);
     }
     
     // Initialize Agent Bridge (focused agent coordination)
     try {
-        logger.info(`[initializeApp] Initializing Agent Bridge...`);
+        logger.info(`Initializing Agent Bridge...`);
         agentBridge = await initializeAgentBridge();
-        logger.info(`[initializeApp] Agent Bridge initialized successfully!`);
+        logger.info(`Agent Bridge initialized successfully!`);
     } catch (error) {
-        logger.warn(`[initializeApp] Agent initialization completed with warnings: ${error instanceof Error ? error.message : String(error)}. Continuing with limited functionality.`);
+        logger.warn(`Agent initialization completed with warnings: ${error instanceof Error ? error.message : String(error)}. Continuing with limited functionality.`);
         // Don't quit - Agent can start in limited mode without API key
         if (!agentBridge) {
-            logger.error(`[initializeApp] No agent bridge instance available.`);
+            logger.error(`No agent bridge instance available.`);
             // Still continue - UI can prompt for API key
         }
     }
@@ -133,13 +135,11 @@ const initializeApp = async (): Promise<void> => {
         const providerInfo = agentBridge.getProviderInfo();
         logger.info(`[initializeApp] Agent ready: ${status}, Provider: ${providerInfo.service} (${providerInfo.model})`);
         
-        // Listen for the AthenaWidget to signal it's ready
-        ipcMain.once('athena-widget-ready', async () => {
-            logger.info('[App] AthenaWidget is ready, sending greeting message.');
-            if (agentBridge) {
-                await agentBridge.sendGreetingMessage();
-            }
-        });
+        // Send greeting message
+        // No need to await if sendGreetingMessage is not critical path for app init
+        // and we don't want to block initializeApp further.
+        // If it MUST be sent before other things, then await it.
+        agentBridge.sendGreetingMessage(); 
     }
     
     // Log Window Registry status for enhanced UI system

@@ -1,6 +1,8 @@
-import * as logger from '@utils/logger';
+import { createLogger } from '@/lib/utils/logger';
 import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
+
+const logger = createLogger('[AppFileLoader]');
 
 /**
  * Centralized utility for loading HTML files in Electron apps

@@ -7,14 +7,16 @@
  * Updated to support MCP Protocol v2025.3.26 specifications
  */
 
+import { createLogger } from '@/lib/utils/logger';
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import logger from '@utils/logger';
 import { EventEmitter } from 'events';
 import { MCPConfig, MCPServerConfig } from '../../infrastructure/config/config';
 import { ConfigurableComponent } from '../../infrastructure/config/configurable-component';
+
+const logger = createLogger('[MCP]');
 
 /**
  * Interface for MCP transport factory
@@ -239,8 +241,8 @@ class MCPTransportFactoryImpl implements MCPTransportFactory {
                 
                 // Custom HTTP transport implementation would go here
                 // For now, log a warning about limited support
-                logger.warn(`[MCP] HTTP transport has limited support. Consider using streamableHttp for server: ${config.name}`);
-                throw new Error(`[MCP] HTTP transport not fully implemented for server: ${config.name}`);
+                logger.warn(`HTTP transport has limited support. Consider using streamableHttp for server: ${config.name}`);
+                throw new Error(`HTTP transport not fully implemented for server: ${config.name}`);
 
             default:
                 throw new Error(`[MCP] Unsupported transport type: ${config.transport} for server: ${config.name}`);
@@ -611,7 +613,7 @@ export class MCPManager extends ConfigurableComponent<MCPConfig> implements MCPC
             });
 
         } catch (error) {
-            logger.error(`[MCP] Failed to connect to server ${serverId}:`, error);
+            logger.error(`Failed to connect to server ${serverId}:`, error);
             
             // Store failed connection state with error information for UI display
             const failedConnection: MCPConnection = {
@@ -637,7 +639,7 @@ export class MCPManager extends ConfigurableComponent<MCPConfig> implements MCPC
             });
             
             // Don't rethrow - we want to continue with other servers
-            logger.warn(`[MCP] Server ${serverId} connection failed, stored error state for UI`);
+            logger.warn(`Server ${serverId} connection failed, stored error state for UI`);
         }
     }
 
@@ -1015,7 +1017,7 @@ export class MCPManager extends ConfigurableComponent<MCPConfig> implements MCPC
         this.eventEmitter.emit('connectionStatusChanged', serverId, status);
         // Only log errors or significant state changes, not every status emit
         if (status.error) {
-            logger.warn(`[MCP] Server ${serverId} status: ${status.error}`);
+            logger.warn(`Server ${serverId} status: ${status.error}`);
         }
     }
 }

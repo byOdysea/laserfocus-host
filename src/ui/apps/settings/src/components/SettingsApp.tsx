@@ -199,7 +199,7 @@ const SettingItem: React.FC<SettingItemProps> = (props: SettingItemProps) => {
 };
 
 export const SettingsApp: React.FC = () => {
-    console.log('[SettingsApp] Component rendering...');
+    console.info('Component rendering...');
     
     const [state, setState] = React.useState<SettingsAppState>({
         isLoading: true,
@@ -210,14 +210,15 @@ export const SettingsApp: React.FC = () => {
     });
 
     const [workingConfig, setWorkingConfig] = React.useState<any>(null);
+    const [modelOptions, setModelOptions] = React.useState<string[]>([]);
 
     // Load initial data
     React.useEffect(() => {
-        console.log('[SettingsApp] useEffect triggered, loading settings...');
+        console.info('useEffect triggered, loading settings...');
         
         const loadSettings = async () => {
             try {
-                console.log('[SettingsApp] Checking settingsAPI availability...');
+                console.info('Checking settingsAPI availability...');
                 if (!(window as any).settingsAPI) {
                     console.error('[SettingsApp] settingsAPI is not available on window');
                     setState((prev: SettingsAppState) => ({
@@ -228,15 +229,15 @@ export const SettingsApp: React.FC = () => {
                     return;
                 }
 
-                console.log('[SettingsApp] settingsAPI available, making calls...');
+                console.info('settingsAPI available, making calls...');
                 const [configResult, schemaResult] = await Promise.all([
                     (window as any).settingsAPI.getConfig(),
                     (window as any).settingsAPI.getSchema()
                 ]);
 
-                console.log('[SettingsApp] API calls completed:', { configResult, schemaResult });
-                console.log('[Settings] Loaded config:', configResult);
-                console.log('[Settings] Loaded schema:', schemaResult);
+                console.debug('API calls completed:', { configResult, schemaResult });
+                console.debug('Loaded config:', configResult);
+                console.debug('Loaded schema:', schemaResult);
 
                 setState((prev: SettingsAppState) => ({
                     ...prev,
@@ -247,8 +248,14 @@ export const SettingsApp: React.FC = () => {
 
                 setWorkingConfig(configResult.success ? configResult.config : configResult);
 
+                // Load model options for current provider
+                const currentProvider = configResult.config?.provider?.service;
+                if (currentProvider) {
+                    await loadModelOptions(currentProvider);
+                }
+
             } catch (error) {
-                console.error('[SettingsApp] Failed to load settings:', error);
+                console.error('Failed to load settings:', error);
                 setState((prev: SettingsAppState) => ({
                     ...prev,
                     isLoading: false,
@@ -272,7 +279,7 @@ export const SettingsApp: React.FC = () => {
 
             // Auto-update dependent fields when provider changes
             if (section === 'provider' && field === 'service') {
-                console.log(`[Settings] Provider changed to: ${value}, resetting model to default`);
+                console.info(`Provider changed to: ${value}, resetting model to default`);
                 
                 // Map providers to their default models
                 const defaultModels = {
@@ -286,7 +293,7 @@ export const SettingsApp: React.FC = () => {
                 const defaultModel = defaultModels[value as keyof typeof defaultModels];
                 if (defaultModel) {
                     updated.provider.model = defaultModel;
-                    console.log(`[Settings] Auto-selected default model for ${value}: ${defaultModel}`);
+                    console.info(`Auto-selected default model for ${value}: ${defaultModel}`);
                 }
             }
 
@@ -295,12 +302,12 @@ export const SettingsApp: React.FC = () => {
     };
 
     const handleSave = async () => {
-        console.log('[Settings] Save button clicked');
+        console.info('Save button clicked');
         setState((prev: SettingsAppState) => ({ ...prev, saving: true }));
         
         try {
             const result = await (window as any).settingsAPI.updateConfig(workingConfig);
-            console.log('[Settings] Save result:', result);
+            console.debug('Save result:', result);
             
             if (result.success) {
                 setState((prev: SettingsAppState) => ({ 
@@ -309,13 +316,13 @@ export const SettingsApp: React.FC = () => {
                     saving: false 
                 }));
                 setWorkingConfig(result.config);
-                console.log('[Settings] Configuration saved successfully');
+                console.info('Configuration saved successfully');
                 
                 // Simple timeout approach for MCP status refresh (works reliably)
                 setTimeout(async () => {
                     try {
                         const mcpStatus = await (window as any).settingsAPI.getMCPStatus();
-                        console.log('[Settings] Refreshed MCP status after save:', mcpStatus);
+                        console.info('Refreshed MCP status after save:', mcpStatus);
                         // Force re-render to update status
                         setState((prev: SettingsAppState) => ({ ...prev, config: { ...prev.config } }));
                     } catch (error) {
@@ -396,6 +403,25 @@ export const SettingsApp: React.FC = () => {
         });
         
         return groups;
+    };
+
+    const loadModelOptions = async (dependentValue: string) => {
+        try {
+            console.info(`Loading model options for provider: ${dependentValue}`);
+            const result = await (window as any).settingsAPI.getModelOptions(dependentValue);
+            
+            if (result.success && result.models) {
+                console.debug(`Model options result:`, result);
+                console.info(`Setting ${result.models.length} model options:`, result.models);
+                setModelOptions(result.models);
+            } else {
+                console.warn(`No models returned or request failed`);
+                setModelOptions([]);
+            }
+        } catch (error) {
+            console.error('Failed to load model options:', error);
+            setModelOptions([]);
+        }
     };
 
     if (state.isLoading) {

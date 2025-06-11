@@ -14,7 +14,7 @@ import type {
     DesktopWindow,
     ModifyElementParams
 } from '@/lib/types/canvas';
-import * as logger from '@utils/logger';
+import { createLogger } from '@utils/logger';
 import { BrowserWindow, screen } from 'electron';
 import { ConfigurationManager } from '../../infrastructure/config/configuration-manager';
 import { getUIDiscoveryService } from '../../platform/discovery/main-process-discovery';
@@ -26,6 +26,8 @@ function toPascalCase(str: string): string {
         .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
         .join('');
 }
+
+const logger = createLogger('[DesktopAdapter]');
 
 export class DesktopCanvasAdapter implements CanvasAdapter {
     readonly canvasType = 'desktop';
@@ -84,7 +86,7 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         // Capture initial state
         await this.updateDesktopState();
         
-        logger.info('[DesktopAdapter] Canvas initialized with desktop monitoring');
+        logger.info('Canvas initialized with desktop monitoring');
         return this.canvas;
     }
 
@@ -153,30 +155,30 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
             closable: true
         });
 
-        logger.info(`[DesktopAdapter] Created BrowserWindow for ${contentSource} at (${x}, ${y}) size ${width}x${height}`);
+        logger.info(`Created BrowserWindow for ${contentSource} at (${x}, ${y}) size ${width}x${height}`);
 
         // Load the URL
         const normalizedUrl = this.normalizeUrl(contentSource);
-        logger.debug(`[DesktopAdapter] Loading URL: ${normalizedUrl}`);
+        logger.debug(`Loading URL: ${normalizedUrl}`);
         
         try {
             await window.loadURL(normalizedUrl);
-            logger.debug(`[DesktopAdapter] Successfully loaded URL: ${normalizedUrl}`);
+            logger.debug(`Successfully loaded URL: ${normalizedUrl}`);
             
             // Show window once after successful load
-            logger.debug(`[DesktopAdapter] Showing window for ${normalizedUrl}`);
+            logger.debug(`Showing window for ${normalizedUrl}`);
             window.show();
             window.focus();
             
         } catch (error) {
-            logger.error(`[DesktopAdapter] Failed to load URL ${normalizedUrl}:`, error);
+            logger.error(`Failed to load URL ${normalizedUrl}:`, error);
             throw error;
         }
         
         // Single visibility check after a delay
         setTimeout(() => {
             if (!window.isDestroyed() && !window.isVisible()) {
-                logger.debug(`[DesktopAdapter] Window still not visible, forcing show`);
+                logger.debug(`Window still not visible, forcing show`);
                 window.show();
                 window.focus();
             }
@@ -185,7 +187,7 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         // Add debugging for window state
         setTimeout(() => {
             const bounds = window.getBounds();
-            logger.debug(`[DesktopAdapter] Window state check - Visible: ${window.isVisible()}, Bounds: ${JSON.stringify(bounds)}, Destroyed: ${window.isDestroyed()}`);
+            logger.debug(`Window state check - Visible: ${window.isVisible()}, Bounds: ${JSON.stringify(bounds)}, Destroyed: ${window.isDestroyed()}`);
         }, 1000);
 
         // Track the window
@@ -264,7 +266,7 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         const parsedUri = this.parseUIComponentUri(contentSource);
         const componentName = toPascalCase(parsedUri.componentName);
         
-        logger.debug(`[DesktopAdapter] Creating internal UI component: ${componentName}`);
+        logger.debug(`Creating internal UI component: ${componentName}`);
 
         const appModule = await uiDiscovery.initializeUIWindow(componentName);
         if (!appModule || !appModule.instance || !appModule.instance.window) {
@@ -275,6 +277,12 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         
         // Position and size the window according to canvas requirements
         componentWindow.setBounds({ x, y, width, height });
+        
+        // Show window when ready to prevent visual flash
+        componentWindow.once('ready-to-show', () => {
+            componentWindow.show();
+            componentWindow.focus();
+        });
         
         // Track the component window in our managed elements
         this.managedElements.set(elementId, componentWindow);
@@ -327,7 +335,7 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
 
         // Handle component-specific parameters if present
         if (parsedUri.params.size > 0) {
-            logger.info(`[DesktopAdapter] Component parameters:`, Object.fromEntries(parsedUri.params));
+            logger.info(`Component parameters:`, Object.fromEntries(parsedUri.params));
             componentWindow.webContents.once('dom-ready', () => {
                 componentWindow.webContents.send('component-params', Object.fromEntries(parsedUri.params));
             });
@@ -342,7 +350,7 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
             parameters: params
         });
 
-        logger.info(`[DesktopAdapter] Created ${parsedUri.scheme} component: ${parsedUri.componentName}`);
+        logger.info(`Created ${parsedUri.scheme} component: ${parsedUri.componentName}`);
         this.notifyChange();
         return element;
     }
@@ -468,7 +476,12 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
      */
     private startDesktopMonitoring(): void {
         this.monitoringInterval = setInterval(async () => {
-            await this.updateDesktopState();
+            try {
+                await this.updateDesktopState();
+            } catch (error) {
+                logger.error('Error during desktop state monitoring:', error);
+                this.stopDesktopMonitoring();
+            }
         }, 1000); // 1Hz - reduced from 100ms to save CPU
     }
 
@@ -595,6 +608,7 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         window.on('show', () => this.updateElementVisibility(elementId, true));
         window.on('hide', () => this.updateElementVisibility(elementId, false));
         window.on('closed', () => this.handleElementClosed(elementId));
+        logger.debug(`Event handlers set up for element ${elementId}`);
     }
 
     /**
@@ -606,7 +620,15 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         if (window && !window.isDestroyed() && element) {
             const bounds = window.getBounds();
             element.transform.position.coordinates = [bounds.x, bounds.y];
+            this.recordOperation({
+                id: `op-${Date.now()}`,
+                type: 'modify',
+                elementId,
+                timestamp: Date.now(),
+                parameters: { transform: { position: { coordinates: [bounds.x, bounds.y] } } }
+            });
             this.notifyChange();
+            logger.debug(`Element ${elementId} moved to ${bounds.x},${bounds.y}`);
         }
     }
 
@@ -620,7 +642,15 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
             const bounds = window.getBounds();
             element.transform.position.coordinates = [bounds.x, bounds.y];
             element.transform.size.dimensions = [bounds.width, bounds.height];
+            this.recordOperation({
+                id: `op-${Date.now()}`,
+                type: 'modify',
+                elementId,
+                timestamp: Date.now(),
+                parameters: { transform: { size: { dimensions: [bounds.width, bounds.height] } } }
+            });
             this.notifyChange();
+            logger.debug(`Element ${elementId} resized to ${bounds.width}x${bounds.height}`);
         }
     }
 
@@ -631,7 +661,15 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         const element = this.canvas.elements.find(e => e.id === elementId);
         if (element) {
             element.state.focused = focused;
+            this.recordOperation({
+                id: `op-${Date.now()}`,
+                type: 'modify',
+                elementId,
+                timestamp: Date.now(),
+                parameters: { state: { focused } }
+            });
             this.notifyChange();
+            logger.debug(`Element ${elementId} focus state changed to ${focused}`);
         }
     }
 
@@ -642,7 +680,15 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         const element = this.canvas.elements.find(e => e.id === elementId);
         if (element) {
             element.state.visible = visible;
+            this.recordOperation({
+                id: `op-${Date.now()}`,
+                type: 'modify',
+                elementId,
+                timestamp: Date.now(),
+                parameters: { state: { visible } }
+            });
             this.notifyChange();
+            logger.debug(`Element ${elementId} visibility changed to ${visible}`);
         }
     }
 
@@ -652,16 +698,22 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
     private handleElementClosed(elementId: string): void {
         this.managedElements.delete(elementId);
         this.canvas.elements = this.canvas.elements.filter(e => e.id !== elementId);
+        this.recordOperation({
+            id: `op-${Date.now()}`,
+            type: 'remove',
+            elementId,
+            timestamp: Date.now(),
+            parameters: {}
+        });
         this.notifyChange();
+        logger.info(`Element ${elementId} closed and removed from canvas`);
     }
 
     /**
      * Check if a URL uses an internal URI scheme
      */
     private isInternalUriScheme(url: string): boolean {
-        return url.startsWith('apps://') || 
-               url.startsWith('widgets://') || 
-               url.startsWith('platform://');
+        return /^(apps|widgets|platform):(\/\/)?([a-zA-Z0-9_-]+)/.test(url);
     }
 
     /**
@@ -673,22 +725,22 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         path?: string;
         params: Map<string, string>;
     } {
-        try {
-            const url = new URL(uri);
-            const scheme = url.protocol.slice(0, -1) as 'apps' | 'widgets' | 'platform'; // Remove trailing ':'
-            const componentName = url.hostname || url.pathname.split('/')[0];
-            const path = url.pathname === '/' || url.pathname === `/${componentName}` ? undefined : url.pathname;
-            const params = new Map<string, string>();
-            
-            // Parse query parameters
-            for (const [key, value] of url.searchParams.entries()) {
-                params.set(key, value);
-            }
-            
-            return { scheme, componentName, path, params };
-        } catch (error) {
-            throw new Error(`Invalid URI scheme: ${uri}`);
+        const match = uri.match(/^(apps|widgets|platform):(\/\/)?([a-zA-Z0-9_-]+)(\/([a-zA-Z0-9_/-]*))?(\?(.*))?$/);
+        if (!match) {
+            throw new Error(`Invalid UI component URI: ${uri}`);
         }
+        
+        const scheme = match[1] as 'apps' | 'widgets' | 'platform';
+        const componentName = match[3];
+        const path = match[5];
+        const params = new Map<string, string>();
+        
+        // Parse query parameters
+        for (const [key, value] of new URL(uri).searchParams.entries()) {
+            params.set(key, value);
+        }
+        
+        return { scheme, componentName, path, params };
     }
 
     /**
@@ -775,23 +827,25 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
      * Clean shutdown
      */
     async destroy(): Promise<void> {
-        // Stop monitoring
+        this.stopDesktopMonitoring();
+        
+        // Close all managed windows
+        for (const [id, window] of this.managedElements.entries()) {
+            if (window && !window.isDestroyed()) {
+                window.close();
+            }
+            this.managedElements.delete(id);
+        }
+        
+        this.canvas.elements = [];
+        logger.info('All managed windows closed and canvas cleared');
+    }
+
+    private stopDesktopMonitoring(): void {
         if (this.monitoringInterval) {
             clearInterval(this.monitoringInterval);
             this.monitoringInterval = null;
+            logger.info('Stopped desktop monitoring');
         }
-
-        // Close managed windows
-        for (const [id, window] of this.managedElements) {
-            if (!window.isDestroyed()) {
-                window.close();
-            }
-        }
-        
-        this.managedElements.clear();
-        this.canvas.elements = [];
-        this.changeCallback = null;
-        
-        logger.info('[DesktopAdapter] Adapter destroyed');
     }
 } 

@@ -1,7 +1,9 @@
 import { AppIpcModule, AppMainProcessInstances } from '@core/platform/ipc/types';
 import { NotesWindow } from '@ui/apps/notes/notes.main';
-import * as logger from '@utils/logger';
+import { createLogger } from '@utils/logger';
 import { IpcMain } from 'electron';
+
+const logger = createLogger('[NotesIPC]');
 
 const NotesIpcHandlers: AppIpcModule = {
     moduleId: 'Notes',
@@ -11,16 +13,16 @@ const NotesIpcHandlers: AppIpcModule = {
         appInstance: NotesWindow,
         allAppInstances?: AppMainProcessInstances
     ) => {
-        logger.info('[NotesIPC] Registering notes IPC handlers');
+        logger.info('Registering notes IPC handlers');
 
         // Example: Handle app-specific events
         ipcMain.handle('notes:example-action', async (event, data) => {
             try {
-                logger.info(`[NotesIPC] Example action called with:`, data);
+                logger.info(`Example action called with:`, data);
                 // Add your app-specific logic here
                 return { success: true, result: 'Example result' };
             } catch (error) {
-                logger.error('[NotesIPC] Error in example action:', error);
+                logger.error('Error in example action:', error);
                 return { success: false, error: 'Failed to execute action' };
             }
         });
@@ -32,7 +34,7 @@ const NotesIpcHandlers: AppIpcModule = {
             }
         });
 
-        logger.info('[NotesIPC] notes IPC handlers registered successfully');
+        logger.info('notes IPC handlers registered successfully');
     }
 };
 

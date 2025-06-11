@@ -9,6 +9,7 @@
 import { Canvas } from '@/lib/types/canvas';
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import { RunnableConfig } from "@langchain/core/runnables";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { END, MemorySaver, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
@@ -25,7 +26,22 @@ import { getCanvasStateParser } from './prompts/canvas-state-parser';
 import { buildCoreSystemPrompt, buildMCPSummary } from "./prompts/core-system";
 import { buildPlatformComponentsDescription } from "./prompts/layout-calculations";
 import { buildUIComponentsSummary } from "./prompts/ui-components";
-import { ToolStatusCallback } from './types/tool-status';
+import { ToolStatusCallback, ConversationUpdate } from './types/tool-status';
+
+// Exported types for agent status
+export type AgentConnectionStatus = 'unknown' | 'connected' | 'failed' | 'no-key' | 'local' | 'disabled' | 'configured' | 'error' | 'disconnected'; // Added 'disabled', 'configured', 'error', 'disconnected' to cover all known states
+
+export interface AgentStatusInfo {
+    initialized: boolean;
+    ready: boolean;
+    provider: string;
+    model: string;
+    hasValidConfig: boolean;
+    connectionStatus: AgentConnectionStatus;
+    lastError?: string;
+    activeTools?: string[];
+    mcpServers?: string[];
+}
 
 /**
  * Dependency injection interface for Athena Agent
@@ -50,8 +66,8 @@ interface SystemPromptBuilder {
  */
 interface WorkflowManager {
     createWorkflow(llm: BaseChatModel, tools: DynamicStructuredTool[], statusCallback?: ToolStatusCallback): any;
-    processMessage(workflow: any, message: string, config: any): Promise<string>;
-    streamMessage(workflow: any, message: string, config: any, onChunk: (chunk: string) => void): Promise<string>;
+    processMessage(workflow: any, message: string, config: any, onUpdate?: (update: ConversationUpdate) => void): Promise<string>;
+    streamMessage(workflow: any, message: string, config: any, onChunk: (chunk: string) => void, onUpdate?: (update: ConversationUpdate) => void): Promise<string>;
     getMetricsSnapshot(): any;
 }
 
@@ -234,7 +250,20 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
      */
     private async initializeLLM(): Promise<void> {
         const providerConfig = this.getConfig();
-        
+        this.connectionStatus = 'unknown'; // Reset status at the beginning
+        this.lastError = undefined;
+
+        if (providerConfig.service === 'disabled') {
+            logger.info('[Athena] LLM service is disabled by configuration.');
+            this.llm = null;
+            this.workflow = null;
+            this.connectionStatus = 'local'; // Or a dedicated 'disabled' status if preferred
+            this.lastError = undefined;
+            this.initialized = true; // Agent is in a valid, known (non-LLM) state
+            // No need to proceed with LLM-specific setup or validation
+            return;
+        }
+
         try {
             logger.info(`[Athena] Initializing LLM: ${providerConfig.service}/${providerConfig.model}`);
             
@@ -253,6 +282,8 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
             const toolsHash = this.hashTools(allTools, providerConfig);
             if (this.llm && this.workflow && this.lastToolsHash === toolsHash) {
                 logger.debug('[Athena] Tools and config unchanged, reusing existing LLM');
+                this.connectionStatus = 'connected'; // Restore status as we are reusing a connected LLM
+                this.lastError = undefined; // Clear any previous transient error
                 return;
             }
 
@@ -282,17 +313,45 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
         }
     }
 
+    private shouldFailValidation(providerConfig: ProviderConfig, errors: string[]): boolean {
+        // Fail if there are any errors and the provider is not 'disabled'
+        // Allows 'disabled' provider to proceed without full validation for UI/testing purposes
+        return errors.length > 0 && providerConfig.service !== 'disabled';
+    }
+
+    private handleValidationFailure(providerConfig: ProviderConfig, errors: string[]): void {
+        const errorMsg = `Provider validation failed for ${providerConfig.service}: ${errors.join(', ')}`;
+        logger.error(`[Athena] ${errorMsg}`);
+        this.connectionStatus = 'failed'; // Changed from 'error'
+        this.lastError = errorMsg;
+        // Removed statusCallback call; this callback is for ToolStatusUpdate.
+        // Agent initialization errors are logged and reflected in connectionStatus.
+        // Throw to prevent further initialization steps if validation fails critically.
+        throw new Error(errorMsg);
+    }
+
+    private handleLLMInitializationError(error: any): void {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error('[Athena] Failed to initialize LLM:', errorMessage);
+        this.connectionStatus = 'failed'; // Changed from 'error'
+        this.lastError = `LLM Initialization Failed: ${errorMessage}`;
+        // Removed statusCallback call; this callback is for ToolStatusUpdate.
+        // Agent initialization errors are logged and reflected in connectionStatus.
+        // Optionally, re-throw if this error should halt further operations or be caught upstream.
+        // throw error; 
+    }
+
     /**
      * Configuration change handler with proper error handling
      */
     protected async onConfigurationChange(newConfig: ProviderConfig, previousConfig: ProviderConfig): Promise<void> {
-        logger.info(`[Athena] Provider configuration changed: ${previousConfig.service} → ${newConfig.service}`);
+        logger.info(`[Athena] onConfigurationChange triggered. Old: ${previousConfig.service}/${previousConfig.model}, New: ${newConfig.service}/${newConfig.model}.`);
         
         try {
-            await this.initializeLLM();
-            logger.info('[Athena] Successfully updated to new provider configuration');
+            // Delegate to reloadConfiguration, which includes a hash check and further logging.
+            await this.reloadConfiguration(); 
         } catch (error) {
-            logger.error('[Athena] Failed to update provider configuration:', error);
+            logger.error(`[Athena] Error during onConfigurationChange (calling reloadConfiguration) for ${newConfig.service}/${newConfig.model}:`, error);
         }
     }
 
@@ -317,85 +376,68 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     }
 
     /**
-     * Process user input with strategy pattern for different modes
+     * Process user input. This method will attempt to stream the response.
+     * If streaming events are available, onChunk will be called for each chunk.
+     * If streaming events fail or are not available, the workflowManager.streamMessage
+     * will fall back to a regular invocation, and the full response will be
+     * delivered as a single call to onChunk.
+     * Tool calls and other updates are sent via the onUpdate callback.
      */
-    async invoke(userInput: string, onChunk?: (chunk: string) => void): Promise<string> {
+    async invoke(
+        userInput: string, 
+        onChunk: (chunk: string) => void, // Made non-optional as streamMessage requires it
+        onUpdate?: (update: ConversationUpdate) => void
+    ): Promise<string> {
         logger.info(`[Athena] Processing: "${userInput}"`);
         
         if (!this.initialized || !this.workflow) {
+            // If onUpdate is available, send an error update to the UI
+            if (onUpdate) {
+                onUpdate({
+                    type: 'agent-stream-error',
+                    content: this.getNotReadyMessage(),
+                    timestamp: new Date().toISOString()
+                });
+            }
             return this.getNotReadyMessage();
         }
-
-        // Only reload configuration if needed (ConfigurableComponent handles automatic updates)
-        // This avoids redundant config loading on every request
-        // await this.reloadConfiguration();
 
         try {
             const config = { configurable: { thread_id: this.threadId } };
             
-            if (onChunk) {
-                const result = await this.workflowManager.streamMessage(this.workflow, userInput, config, onChunk);
-                this.lastError = undefined; // Clear error on success
-                return result;
-            } else {
-                const result = await this.workflowManager.processMessage(this.workflow, userInput, config);
-                this.lastError = undefined; // Clear error on success
-                return result;
-            }
+            // Always use streamMessage. It handles its own fallback to non-streaming if necessary.
+            const result = await this.workflowManager.streamMessage(
+                this.workflow, 
+                userInput, 
+                config, 
+                onChunk, 
+                onUpdate
+            );
+            this.lastError = undefined; // Clear error on success
+            return result;
         } catch (error: any) {
             this.lastError = error.message;
+            const errorMessage = `❌ I encountered an error: ${error.message}. Please try again.`;
             logger.error(`[Athena] Error processing input:`, error);
-            return `❌ I encountered an error: ${error.message}. Please try again.`;
+            
+            // Send error to UI via onUpdate if available
+            if (onUpdate) {
+                onUpdate({
+                    type: 'agent-stream-error',
+                    content: errorMessage,
+                    timestamp: new Date().toISOString()
+                });
+            }
+            return errorMessage;
         }
-    }
-
-    /**
-     * Stream responses in real-time with a callback for each chunk
-     */
-    async streamInvoke(userInput: string, onChunk: (chunk: string) => void): Promise<string> {
-        return this.invoke(userInput, onChunk);
-    }
-
-    // Utility methods for better code organization
-    private shouldFailValidation(config: ProviderConfig, errors: string[]): boolean {
-        return errors.length > 0 && 
-               this.llmFactory.requiresApiKey(config.service) && 
-               errors.some(e => e.includes('API key'));
-    }
-
-    private handleValidationFailure(config: ProviderConfig, errors: string[]): void {
-        this.connectionStatus = 'no-key';
-        logger.warn('[Athena] Validation failed - limited functionality');
-        this.llm = null;
-        this.workflow = null;
-    }
-
-    private handleLLMInitializationError(error: any): void {
-        this.connectionStatus = 'failed';
-        this.lastError = `LLM initialization failed: ${error.message}`;
-        logger.error('[Athena] LLM initialization failed:', error);
-        this.llm = null;
-        this.workflow = null;
-        throw error;
     }
 
     private getNotReadyMessage(): string {
-        const config = this.getConfig();
-        if (this.llmFactory.requiresApiKey(config.service) && !config.apiKey) {
-            return "⚠️ No API key configured. Please set up your API key in settings.";
+        const providerInfo = this.getProviderInfo();
+        if (!providerInfo.ready && providerInfo.lastError?.includes('API key')) {
+            return "⚠️ Your AI provider API key is missing or invalid. Please check your settings.";
         }
-        return "⚠️ Agent is not properly configured. Please check your settings.";
-    }
-
-    /**
-     * Manually reload configuration (useful for API key updates)
-     */
-    async reloadConfigurationManually(): Promise<void> {
-        logger.info('[Athena] Manual configuration reload requested');
-        await this.reloadConfiguration();
-        if (this.initialized) {
-            await this.initializeLLM();
-        }
+        return "⚠️ Athena is not ready. Please wait a moment or check your configuration.";
     }
 
     /**
@@ -470,7 +512,7 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     }
 
     // Public interface methods
-    isReady(): boolean { return this.initialized && this.workflow !== null; }
+    isReady(): boolean { return this.initialized && this.workflow !== null && this.connectionStatus === 'connected'; }
     getConnectionStatus() { return this.connectionStatus; }
     clearHistory(): void { this.threadId = `athena-${Date.now()}`; }
     getCanvasType(): string { return this.canvasType; }
@@ -664,15 +706,31 @@ class LangGraphWorkflowManager implements WorkflowManager {
         };
 
         // Enhanced tool execution with status tracking
-        const enhancedToolNode = async (state: typeof MessagesAnnotation.State) => {
+        const enhancedToolNode = async (state: typeof MessagesAnnotation.State, runnableConfig?: RunnableConfig) => {
             const nodeStart = performance.now();
             const lastMessage = state.messages[state.messages.length - 1];
             if (lastMessage instanceof AIMessage && lastMessage.tool_calls) {
+                const onUpdateFromConfig = runnableConfig?.configurable?.onUpdate as ((update: ConversationUpdate) => void) | undefined;
+
                 // Send tool execution start status for each tool
                 lastMessage.tool_calls.forEach((toolCall) => {
                     const setupTime = performance.now() - nodeStart;
-                    logger.debug(`[Athena] Executing: ${toolCall.name} (node setup: ${setupTime.toFixed(1)}ms)`);
-                    // Send tool status update if we have a callback
+                    logger.debug(`[Athena] Preparing tool call: ${toolCall.name} (node setup: ${setupTime.toFixed(1)}ms)`);
+
+                    // Send 'tool-call' ConversationUpdate for tool pill via onUpdateFromConfig
+                    if (onUpdateFromConfig) {
+                        onUpdateFromConfig({
+                            type: 'tool-call',
+                            toolName: toolCall.name,
+                            toolInput: toolCall.args,
+                            timestamp: new Date().toISOString(),
+                            message: `Executing tool: ${toolCall.name}`
+                        });
+                    }
+                    
+                    // Original statusCallback for 'executing' -
+                    // Commented out to avoid duplicate UI messages as AgentBridge will handle 'tool-call'.
+                    /*
                     if (statusCallback) {
                         statusCallback({
                             toolName: toolCall.name,
@@ -681,6 +739,7 @@ class LangGraphWorkflowManager implements WorkflowManager {
                             metadata: { args: toolCall.args }
                         });
                     }
+                    */
                 });
             }
             
@@ -746,14 +805,29 @@ class LangGraphWorkflowManager implements WorkflowManager {
         return workflow.compile({ checkpointer });
     }
 
-    async processMessage(workflow: any, message: string, config: any): Promise<string> {
+    async processMessage(
+        workflow: any, 
+        message: string, 
+        config: any, 
+        onUpdate?: (update: ConversationUpdate) => void
+    ): Promise<string> {
         // Extract thread ID from config
         this.threadId = config?.configurable?.thread_id;
         
         // Track request timing
         const requestStart = performance.now();
         
-        const result = await workflow.invoke({ messages: [new HumanMessage(message)] }, config);
+        // Prepare config with onUpdate
+        const invokeConfig = { 
+            ...config, 
+            configurable: { 
+                ...config?.configurable, 
+                thread_id: this.threadId, 
+                onUpdate // Pass onUpdate here
+            } 
+        };
+        
+        const result = await workflow.invoke({ messages: [new HumanMessage(message)] }, invokeConfig);
         const lastMessage = result.messages[result.messages.length - 1];
         const response = lastMessage?.content || "Task completed.";
         
@@ -765,7 +839,13 @@ class LangGraphWorkflowManager implements WorkflowManager {
         return response;
     }
 
-    async streamMessage(workflow: any, message: string, config: any, onChunk: (chunk: string) => void): Promise<string> {
+    async streamMessage(
+        workflow: any, 
+        message: string, 
+        config: any, 
+        onChunk: (chunk: string) => void,
+        onUpdate?: (update: ConversationUpdate) => void
+    ): Promise<string> {
         // Extract thread ID from config
         this.threadId = config?.configurable?.thread_id;
         
@@ -773,14 +853,23 @@ class LangGraphWorkflowManager implements WorkflowManager {
         const requestStart = performance.now();
         
         let streamedContent = '';
-        let detectedTools = new Set<string>();
         let chunkCount = 0;
-        const logStreamingEvery = 50;
+
+        // Prepare config with onUpdate for streamEvents and fallback invoke
+        const streamAndInvokeConfig = {
+            ...config,
+            configurable: {
+                ...config?.configurable,
+                thread_id: this.threadId,
+                onUpdate // Pass onUpdate here
+            },
+            version: "v2" as const // Ensure version is correctly typed for streamEvents
+        };
         
         try {
             const eventStream = workflow.streamEvents(
                 { messages: [new HumanMessage(message)] },
-                { ...config, version: "v2" }
+                streamAndInvokeConfig 
             );
 
             let lastEventTime = performance.now();
@@ -803,9 +892,6 @@ class LangGraphWorkflowManager implements WorkflowManager {
                     }
                 }
                 
-                // Handle tool detection (event-agnostic)
-                this.detectAndSendToolCalls(event, detectedTools, onChunk);
-                
                 lastEventTime = currentTime;
             }
             
@@ -822,11 +908,8 @@ class LangGraphWorkflowManager implements WorkflowManager {
 
         // Fallback to regular invoke (only if streaming produced no content)
         try {
-            const result = await workflow.invoke({ messages: [new HumanMessage(message)] }, config);
+            const result = await workflow.invoke({ messages: [new HumanMessage(message)] }, streamAndInvokeConfig); // Use updated config
             const response = this.extractResponseContent(result);
-            
-            // Detect any tools we missed during streaming
-            this.detectToolsFromResult(result, detectedTools, onChunk);
             
             // Only send the response if we didn't already stream content
             if (response && streamedContent.length === 0) {
@@ -905,67 +988,11 @@ class LangGraphWorkflowManager implements WorkflowManager {
         return "You are Athena, an AI assistant with desktop management capabilities.";
     }
 
-    private detectAndSendToolCalls(event: any, detectedTools: Set<string>, onChunk: (chunk: string) => void) {
-        // Detect tool calls as early as possible from different event types
-        
-        // 1. From AI message with tool calls (earliest detection)
-        if (event.event === "on_chat_model_end" && event.data?.output?.tool_calls) {
-            const toolCalls = event.data.output.tool_calls;
-            for (const toolCall of toolCalls) {
-                if (toolCall.name && !detectedTools.has(toolCall.name)) {
-                    logger.debug(`[Athena] Early tool detection: ${toolCall.name}`);
-                    onChunk(`🔧 ${toolCall.name}`);
-                    detectedTools.add(toolCall.name);
-                }
-            }
-        }
-        
-        // 2. From tool start event
-        if (event.event === "on_tool_start" && event.name) {
-            const toolName = event.name;
-            if (!detectedTools.has(toolName)) {
-                onChunk(`🔧 ${toolName}`);
-                detectedTools.add(toolName);
-            }
-        }
-
-        // 3. From chain start with messages (fallback)
-        if (event.event === "on_chain_start" && event.data?.input?.messages) {
-            const messages = event.data.input.messages;
-            const lastMessage = messages[messages.length - 1];
-            if (lastMessage?.tool_calls && lastMessage.tool_calls.length > 0) {
-                for (const toolCall of lastMessage.tool_calls) {
-                    if (toolCall.name && !detectedTools.has(toolCall.name)) {
-                        onChunk(`🔧 ${toolCall.name}`);
-                        detectedTools.add(toolCall.name);
-                    }
-                }
-            }
-        }
-    }
-
     private extractResponseContent(result: any): string {
         const lastMessage = result.messages[result.messages.length - 1];
         const response = lastMessage?.content || "Task completed.";
         logger.info(`[Athena] Response: "${response}"`);
         return response;
-    }
-
-    private detectToolsFromResult(result: any, detectedTools: Set<string>, onChunk: (chunk: string) => void) {
-        if (result.messages && result.messages.length > 0) {
-            for (let i = result.messages.length - 1; i >= Math.max(0, result.messages.length - 3); i--) {
-                const message = result.messages[i];
-                if (message.tool_calls && message.tool_calls.length > 0) {
-                    message.tool_calls.forEach((toolCall: any) => {
-                        if (toolCall.name && !detectedTools.has(toolCall.name)) {
-                            onChunk(`🔧 ${toolCall.name}`);
-                            detectedTools.add(toolCall.name);
-                        }
-                    });
-                    break;
-                }
-            }
-        }
     }
 
     private recordRequestMetrics(requestTime: number): void {

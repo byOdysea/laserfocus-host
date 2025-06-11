@@ -14,6 +14,23 @@ const getDefaultLogLevel = () => {
 
 // Configure electron-log with environment awareness
 const defaultLevel = getDefaultLogLevel();
+
+// Initialize electron-log transports if they don't exist
+if (!log.transports.file) {
+  log.transports.file = log.transports.file || {};
+  log.transports.file.level = IS_DEV ? 'debug' : 'info';
+  log.transports.file.format = IS_DEV ? '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}' : '[{h}:{i}:{s}] {text}';
+  log.transports.file.maxSize = 10 * 1024 * 1024; // 10MB
+}
+
+if (!log.transports.console) {
+  log.transports.console = log.transports.console || {};
+  log.transports.console.level = defaultLevel;
+  log.transports.console.format = IS_DEV ? '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}' : '[{h}:{i}:{s}] {text}';
+  log.transports.console.useStyles = true;
+}
+
+// Set log levels
 log.transports.file.level = IS_DEV ? 'debug' : 'info';     // Always log debug to file in dev
 log.transports.console.level = defaultLevel;               // Environment-aware console logging
 
@@ -29,11 +46,15 @@ if (IS_DEV) {
  * Update logging levels dynamically (e.g., from system configuration)
  */
 export function updateLogLevel(level: 'debug' | 'info' | 'warn' | 'error'): void {
-  log.transports.console.level = level;
-  // Always keep file logging at debug level for troubleshooting, except in error-only mode
-  log.transports.file.level = level === 'error' ? 'error' : 'debug';
+  if (log.transports.console) {
+    log.transports.console.level = level;
+  }
+  if (log.transports.file) {
+    // Always keep file logging at debug level for troubleshooting, except in error-only mode
+    log.transports.file.level = level === 'error' ? 'error' : 'debug';
+  }
   
-  info(`[Logger] Log level updated to: console=${level}, file=${log.transports.file.level}`);
+  info(`[Logger] Log level updated to: console=${level}, file=${log.transports.file?.level}`);
 }
 
 /**
@@ -41,8 +62,8 @@ export function updateLogLevel(level: 'debug' | 'info' | 'warn' | 'error'): void
  */
 export function getLogConfig(): { console: string; file: string; environment: string } {
   return {
-    console: log.transports.console.level as string,
-    file: log.transports.file.level as string,
+    console: log.transports.console?.level as string || 'info',
+    file: log.transports.file?.level as string || 'info',
     environment: process.env.NODE_ENV || 'unknown'
   };
 }
@@ -131,7 +152,6 @@ function formatSingleLangChainMessage(message: any): string {
 }
 
 function formatPotentiallyComplexObject(obj: any): string {
-
   if (obj && ( (obj.constructor && ['HumanMessage', 'AIMessage', 'ToolMessage'].includes(obj.constructor.name)) || (obj.lc === 1 && obj.kwargs && obj.id) )) {
     return formatSingleLangChainMessage(obj);
   }
@@ -163,6 +183,22 @@ log.info = (...args: any[]) => log.functions.info(processArgs(args));
 log.verbose = (...args: any[]) => log.functions.verbose(processArgs(args));
 log.debug = (...args: any[]) => log.functions.debug(processArgs(args));
 log.silly = (...args: any[]) => log.functions.silly(processArgs(args));
+
+/**
+ * Creates a new logger instance with a specific module name prefix.
+ * This is the preferred way to log from within modules to ensure consistency.
+ * @param name - The name of the module (e.g., '[CanvasEngine]')
+ * @returns A logger object with info, warn, error, and debug methods.
+ */
+export function createLogger(name: string) {
+  const prefix = `${name} `;
+  return {
+    error: (...args: any[]) => log.functions.error(prefix + processArgs(args)),
+    warn: (...args: any[]) => log.functions.warn(prefix + processArgs(args)),
+    info: (...args: any[]) => log.functions.info(prefix + processArgs(args)),
+    debug: (...args: any[]) => log.functions.debug(prefix + processArgs(args)),
+  };
+}
 
 // Default export for convenience if only one thing is typically imported
 export default log;

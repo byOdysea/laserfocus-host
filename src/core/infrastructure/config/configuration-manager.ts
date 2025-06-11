@@ -268,26 +268,26 @@ export class ConfigurationManager {
     return { ...this.config };
   }
 
-  async update(updates: Partial<AppConfig>): Promise<void> {
-    this.config = configSchema.parse({
-      provider: { ...this.config.provider, ...updates.provider },
-      system: { ...this.config.system, ...updates.system },
-      // Optional future categories
-      ...(updates.ui && { ui: { ...this.config.ui, ...updates.ui } }),
-      ...(updates.workspace && { workspace: { ...this.config.workspace, ...updates.workspace } }),
-      ...(updates.integrations && { integrations: { ...this.config.integrations, ...updates.integrations } }),
-      ...(updates.performance && { performance: { ...this.config.performance, ...updates.performance } }),
-      ...(updates.security && { security: { ...this.config.security, ...updates.security } })
-    });
+  /**
+   * Update a portion of the configuration and save it.
+   * @param updates The partial configuration to apply.
+   * @param options Optional settings for the update.
+   */
+  async update(updates: Partial<AppConfig>, options?: { silent?: boolean }): Promise<void> {
+    // Store the current config to compare against
+    const oldConfig = JSON.parse(JSON.stringify(this.config));
+
+    // Deep merge the updates into the current config
+    this.config = this._deepMerge(this.config, updates);
     
+    // Validate the updated configuration
+    this.config = configSchema.parse(this.config);
+
+    // Persist the changes to the file system
     await this.save();
     
-    // Call change callback if registered
-    if (this._changeCallbacks.length > 0) {
-      this._changeCallbacks.forEach(callback => callback(this.config));
-    }
-    
-    logger.info('[Config] Configuration updated');
+    // Notify listeners about the change
+    this.notifyListeners(oldConfig, options);
   }
 
   hasValidProvider(): boolean {
@@ -301,8 +301,7 @@ export class ConfigurationManager {
     return { ...this.config.provider };
   }
 
-  onChange(callback: (config: AppConfig) => void): void {
-    // Proper event system that supports multiple subscribers
+  onChange(callback: (config: AppConfig, options?: { silent?: boolean }) => void): void {
     this._changeCallbacks.push(callback);
     logger.debug(`[Config] Added change callback (${this._changeCallbacks.length} total subscribers)`);
   }
@@ -310,7 +309,7 @@ export class ConfigurationManager {
   /**
    * Remove a change callback (for cleanup)
    */
-  offChange(callback: (config: AppConfig) => void): void {
+  offChange(callback: (config: AppConfig, options?: { silent?: boolean }) => void): void {
     const index = this._changeCallbacks.indexOf(callback);
     if (index > -1) {
       this._changeCallbacks.splice(index, 1);
@@ -318,13 +317,72 @@ export class ConfigurationManager {
     }
   }
 
-  private _changeCallbacks: Array<(config: AppConfig) => void> = [];
+  private _changeCallbacks: Array<(config: AppConfig, options?: { silent?: boolean }) => void> = [];
 
   private ensureConfigDirectory(): void {
-    const configDir = path.dirname(this.configPath);
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true });
+    if (!fs.existsSync(path.dirname(this.configPath))) {
+      fs.mkdirSync(path.dirname(this.configPath), { recursive: true });
     }
+  }
+
+  private notifyListeners(oldConfig: AppConfig, options?: { silent?: boolean }): void {
+    const changes = this.getChangedKeys(oldConfig, this.config);
+    if (changes.length > 0) {
+      if (!options?.silent) {
+        logger.debug(`[Config] Notifying ${this._changeCallbacks.length} listeners of changes in: ${changes.join(', ')}`);
+      }
+      this._changeCallbacks.forEach(cb => cb(this.config, options));
+    }
+  }
+
+  private getChangedKeys(oldConfig: AppConfig, newConfig: AppConfig): string[] {
+    const changes: string[] = [];
+    const oldKeys = Object.keys(oldConfig) as Array<keyof AppConfig>;
+    const newKeys = Object.keys(newConfig) as Array<keyof AppConfig>;
+
+    const allKeys = [...new Set([...oldKeys, ...newKeys])];
+
+    allKeys.forEach(key => {
+      const oldValue = oldConfig[key];
+      const newValue = newConfig[key];
+
+      if (this._isObject(oldValue) || this._isObject(newValue)) {
+        // For objects (or if one was an object and now isn't, or vice-versa),
+        // compare their stringified versions to detect deep changes.
+        if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+          changes.push(key);
+        }
+      } else {
+        // For primitive types, direct comparison is fine.
+        if (oldValue !== newValue) {
+          changes.push(key);
+        }
+      }
+    });
+
+    return changes;
+  }
+
+  private _isObject(item: any): boolean {
+    return (item && typeof item === 'object' && !Array.isArray(item));
+  }
+
+  private _deepMerge(target: any, source: any): any {
+    const output = { ...target };
+    if (this._isObject(target) && this._isObject(source)) {
+      Object.keys(source).forEach(key => {
+        if (this._isObject(source[key])) {
+          if (!(key in target)) {
+            Object.assign(output, { [key]: source[key] });
+          } else {
+            output[key] = this._deepMerge(target[key], source[key]);
+          }
+        } else {
+          Object.assign(output, { [key]: source[key] });
+        }
+      });
+    }
+    return output;
   }
 }
 

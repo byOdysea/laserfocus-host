@@ -39,10 +39,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.removeListener(channel, wrappedListener);
         };
     },
-    // IPC senders
+    ipcRendererInvoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
     ipcRendererSend: (channel: string, ...args: any[]) => {
         if (process.env.NODE_ENV === 'development') {
-          console.debug(`--- [AthenaWidget/preload.ts] ipcRendererSend to channel ${channel} with args:`, args);
+            console.debug(`--- [AthenaWidget/preload.ts] ipcRendererSend on channel ${channel} ---`);
         }
         ipcRenderer.send(channel, ...args);
     },

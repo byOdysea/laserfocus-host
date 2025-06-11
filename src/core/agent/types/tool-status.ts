@@ -16,11 +16,32 @@ export interface ToolStatusCallback {
 }
 
 export interface ConversationUpdate {
-    type: 'user' | 'agent' | 'agent-stream' | 'agent-stream-start' | 'agent-stream-end' | 'agent-thinking' | 'tool-call' | 'tool-status' | 'agent-stream-error';
-    content: string;
+    type: 
+        | 'user' 
+        | 'agent' 
+        | 'agent-stream' 
+        | 'agent-stream-start' 
+        | 'agent-stream-end' 
+        | 'agent-thinking' 
+        | 'tool-call' 
+        | 'tool-status' 
+        | 'agent-stream-error'
+        // New granular types for better streaming feedback
+        | 'llm_chunk'
+        | 'tool_start'
+        | 'tool_end'
+        | 'llm_end'
+        | 'error'
+        | 'system_message';
+    content?: string; // Original content field, now optional
+    message?: string; // General message for updates
     timestamp?: string;
     status?: ToolStatus;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, any>; // For general purpose metadata
+    data?: any; // For raw data like LLM chunks or error objects
+    toolName?: string;
+    toolInput?: any;
+    toolOutput?: any;
 }
 
 /**
@@ -58,6 +79,6 @@ export class ToolStatusFormatter {
     }
 
     static isStatusMessage(message: string): boolean {
-        return message.startsWith('��_status:');
+        return message.startsWith('🔧_status:');
     }
 } 

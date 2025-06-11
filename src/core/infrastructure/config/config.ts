@@ -62,7 +62,7 @@ export function getProviderModelsWithDefaults(provider: keyof typeof PROVIDER_MO
 export const configSchema = z.object({
   // AI/LLM Provider Configuration
   provider: z.object({
-    service: z.enum(['google', 'openai', 'anthropic', 'ollama', 'custom']).default('google'),
+    service: z.enum(['google', 'openai', 'anthropic', 'ollama', 'custom', 'disabled']).default('google'),
     apiKey: z.string().default(''), // Managed separately by ApiKeyManager, kept for compatibility
     model: z.string().default(DEFAULT_MODELS.google),
     baseUrl: z.string().optional(),
@@ -82,9 +82,6 @@ export const configSchema = z.object({
   
   // User Interface Configuration
   ui: z.object({
-    // Agent streaming behavior
-    enableSmoothStreaming: z.boolean().default(true),
-    streamingSpeed: z.enum(['fast', 'normal', 'slow']).default('normal'),
     // Browser window settings
     browserWindowFrame: z.boolean().default(false),
     enableToolPills: z.boolean().default(false),  

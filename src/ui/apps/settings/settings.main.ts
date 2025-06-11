@@ -1,6 +1,7 @@
-import { BrowserWindow, Display } from 'electron';
+import { getWindowRegistry } from '@core/platform/windows/window-registry';
 import { createAppFileLoader } from '@lib/utils/app-file-loader';
 import * as logger from '@utils/logger';
+import { BrowserWindow, Display } from 'electron';
 
 export class SettingsWindow {
     public window: BrowserWindow;
@@ -41,6 +42,25 @@ export class SettingsWindow {
                 '[SettingsWindow]'
             );
             logger.info('[SettingsWindow] Successfully loaded HTML file');
+            
+            // Register with Window Registry
+            const windowRegistry = getWindowRegistry();
+            windowRegistry.registerWindow({
+                id: 'settings',
+                title: 'Settings',
+                type: 'app',
+                componentName: 'Settings',
+                window: this.window,
+                instance: this,
+                capabilities: ['configuration', 'system-settings', 'mcp-management']
+            });
+            logger.info('[SettingsWindow] Registered with Window Registry');
+
+            // Show window when ready
+            this.window.once('ready-to-show', () => {
+                this.window.show();
+            });
+
         } catch (error) {
             logger.error('[SettingsWindow] Failed to load HTML file:', error);
             throw error;

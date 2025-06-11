@@ -171,58 +171,6 @@ const ByokwidgetIpcHandlers: AppIpcModule = {
             }
         });
 
-        // Get system status from agent (actual connection status)
-        ipcMain.handle('byokwidget:get-status', async () => {
-            try {
-                const currentConfig = config.get();
-                const provider = currentConfig.provider.service;
-                const hasApiKey = await apiKeyManager.hasApiKey(provider);
-                const hasValidProvider = !!provider;
-                
-                let connectionStatus = 'unknown';
-                
-                // Get connection status from agent if available
-                try {
-                    const { getAgentBridge } = await import('@core/platform/ipc/agent-bridge');
-                    const agentBridge = getAgentBridge();
-                    
-                    if (agentBridge?.isReady()) {
-                        const athenaAgent = (agentBridge as any).athenaAgent;
-                        if (athenaAgent?.getConnectionStatus) {
-                            connectionStatus = athenaAgent.getConnectionStatus();
-                            logger.debug(`[BYOK-IPC] Got connection status from agent: ${connectionStatus}`);
-                        }
-                    }
-                } catch (error) {
-                    logger.debug('[BYOK-IPC] Could not get agent status, using fallback');
-                    // Fallback to basic status check
-                    if (provider === 'ollama') {
-                        connectionStatus = 'local';
-                    } else if (!hasApiKey) {
-                        connectionStatus = 'no-key';
-                    } else if (hasApiKey && hasValidProvider) {
-                        connectionStatus = 'configured';
-                    }
-                    logger.debug(`[BYOK-IPC] Fallback status: ${connectionStatus}`);
-                }
-
-                return {
-                    success: true,
-                    status: {
-                        hasApiKey,
-                        hasValidProvider,
-                        connectionStatus,
-                        provider: currentConfig.provider.service,
-                        model: currentConfig.provider.model,
-                        isDevMode: process.env.NODE_ENV === 'development'
-                    }
-                };
-            } catch (error) {
-                logger.error('[BYOK-IPC] Error getting status:', error);
-                return { success: false, error: 'Failed to get status' };
-            }
-        });
-
         // Focus the app window
         ipcMain.on('byokwidget:focus', () => {
             if (appInstance && appInstance.window && !appInstance.window.isDestroyed()) {
@@ -230,40 +178,24 @@ const ByokwidgetIpcHandlers: AppIpcModule = {
             }
         });
 
-        // Open Settings app
-        ipcMain.handle('byokwidget:open-settings', async () => {
-            try {
-                if (allAppInstances?.has('Settings')) {
-                    const settingsWindow = allAppInstances.get('Settings');
-                    if (settingsWindow.window && !settingsWindow.window.isDestroyed()) {
-                        settingsWindow.focus();
-                        return { success: true };
-                    }
-                }
-                
-                // If no settings window instance available, log for debugging
-                logger.info('[BYOK-IPC] Settings window not available in app instances');
-                return { success: false, error: 'Settings window not available' };
-            } catch (error) {
-                logger.error('[BYOK-IPC] Error opening settings:', error);
-                return { success: false, error: 'Failed to open settings' };
-            }
-        });
-
-        // Remove connection testing - let LLM factory handle it when actually used
-
         // Set up configuration change notifications
-        config.onChange(async (newConfig) => {
+        config.onChange(() => {
             // Give the agent a moment to reinitialize before notifying the UI
             setTimeout(() => {
                 // Notify the Byokwidget window about configuration changes
                 if (appInstance && appInstance.window && !appInstance.window.isDestroyed()) {
-                    appInstance.window.webContents.send('config-changed', newConfig);
+                    appInstance.window.webContents.send('config-changed');
                 }
             }, 100); // Small delay to allow agent to process config change
         });
 
         logger.info('[BYOK-IPC] BYOK configuration IPC handlers registered successfully');
+    },
+
+    unregisterMainProcessHandlers: (ipcMain: IpcMain) => {
+        logger.info('[BYOK-IPC] Unregistering BYOK helper IPC handlers');
+        ipcMain.removeHandler('byokwidget:save-api-key');
+        ipcMain.removeListener('byokwidget:focus', () => {});
     }
 };
 

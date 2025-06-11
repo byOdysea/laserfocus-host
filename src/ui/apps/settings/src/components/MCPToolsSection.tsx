@@ -87,57 +87,58 @@ const MCPToolsSection: React.FC<MCPToolsSectionProps> = ({ config, onUpdate }: M
     // Load server status from the backend
     const loadServers = async () => {
         try {
-            const statusResult = await (window as any).settingsAPI.getMCPStatus();
-            
-            if (statusResult.success) {
-                const mcpConfig = config.integrations?.mcp || {};
-                const { agentReady, connectionStatus, toolCounts } = statusResult.status;
-                
-                let serverList: MCPServer[] = [];
-                
-                if (Array.isArray(mcpConfig.servers)) {
-                    // Array format: servers stored as array of objects
-                    serverList = mcpConfig.servers.map((server: any) => {
-                        const serverName = server.name;
-                        const isEnabled = server.enabled !== false;
-                        const connectionInfo = connectionStatus[serverName];
-                        const isConnected = connectionInfo?.connected || false;
-                        const toolCount = toolCounts[serverName] || 0;
-                        const hasTools = toolCount > 0;
-                        
-                        return {
-                            name: serverName,
-                            enabled: isEnabled,
-                            connected: isConnected,
-                            agentCanUseTool: agentReady && isEnabled && hasTools,
-                            toolCount,
-                            error: connectionInfo?.error
-                        };
-                    });
-                } else if (mcpConfig.servers && typeof mcpConfig.servers === 'object') {
-                    // Object format: servers stored as key-value pairs
-                    serverList = Object.entries(mcpConfig.servers).map(([id, serverConfig]: [string, any]) => {
-                        const isEnabled = serverConfig.enabled !== false;
-                        const connectionInfo = connectionStatus[id];
-                        const isConnected = connectionInfo?.connected || false;
-                        const toolCount = toolCounts[id] || 0;
-                        const hasTools = toolCount > 0;
-                        
-                        return {
-                            name: id,
-                            enabled: isEnabled,
-                            connected: isConnected,
-                            agentCanUseTool: agentReady && isEnabled && hasTools,
-                            toolCount,
-                            error: connectionInfo?.error
-                        };
-                    });
-                }
-                
-                setServers(serverList);
+            const result = await window.settingsAPI.getMCPStatus();
+            if (!result.success) {
+                console.error('Error loading servers:', result.error);
+                return;
             }
+            const mcpConfig = config.integrations?.mcp || {};
+            const { agentReady, connectionStatus, toolCounts } = result.status;
+            
+            let serverList: MCPServer[] = [];
+            
+            if (Array.isArray(mcpConfig.servers)) {
+                // Array format: servers stored as array of objects
+                serverList = mcpConfig.servers.map((server: any) => {
+                    const serverName = server.name;
+                    const isEnabled = server.enabled !== false;
+                    const connectionInfo = connectionStatus[serverName];
+                    const isConnected = connectionInfo?.connected || false;
+                    const toolCount = toolCounts[serverName] || 0;
+                    const hasTools = toolCount > 0;
+                    
+                    return {
+                        name: serverName,
+                        enabled: isEnabled,
+                        connected: isConnected,
+                        agentCanUseTool: agentReady && isEnabled && hasTools,
+                        toolCount,
+                        error: connectionInfo?.error
+                    };
+                });
+            } else if (mcpConfig.servers && typeof mcpConfig.servers === 'object') {
+                // Object format: servers stored as key-value pairs
+                serverList = Object.entries(mcpConfig.servers).map(([id, serverConfig]: [string, any]) => {
+                    const isEnabled = serverConfig.enabled !== false;
+                    const connectionInfo = connectionStatus[id];
+                    const isConnected = connectionInfo?.connected || false;
+                    const toolCount = toolCounts[id] || 0;
+                    const hasTools = toolCount > 0;
+                    
+                    return {
+                        name: id,
+                        enabled: isEnabled,
+                        connected: isConnected,
+                        agentCanUseTool: agentReady && isEnabled && hasTools,
+                        toolCount,
+                        error: connectionInfo?.error
+                    };
+                });
+            }
+            
+            setServers(serverList);
         } catch (error) {
-            console.error('[MCPTools] Error loading servers:', error);
+            console.error('Error loading servers:', error);
         }
     };
 
@@ -166,6 +167,11 @@ const MCPToolsSection: React.FC<MCPToolsSectionProps> = ({ config, onUpdate }: M
 
     const handleServerToggle = async (serverName: string, enabled: boolean) => {
         try {
+            const result = await window.settingsAPI.toggleMCPServer(serverName, !enabled);
+            if (!result.success) {
+                console.error('Error toggling server:', result.error);
+                return;
+            }
             const mcpConfig = config.integrations?.mcp || {};
             let updatedServers;
             
@@ -199,7 +205,7 @@ const MCPToolsSection: React.FC<MCPToolsSectionProps> = ({ config, onUpdate }: M
             });
 
         } catch (error) {
-            console.error('[MCPTools] Error toggling server:', error);
+            console.error('Error toggling server:', error);
         }
     };
 

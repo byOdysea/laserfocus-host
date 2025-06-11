@@ -19,7 +19,7 @@ export class AthenaWidgetWindow {
             title: 'Athena Conversation Monitor', // Unique, descriptive title
             webPreferences: {
                 preload: this.preloadPath,
-                nodeIntegration: true,
+                nodeIntegration: false,
                 contextIsolation: true,
             },
             frame: false,
@@ -28,6 +28,7 @@ export class AthenaWidgetWindow {
             x: primaryDisplay.workArea.x + primaryDisplay.workAreaSize.width - 350 - 20, // Top-right X
             y: primaryDisplay.workArea.y + 20, // Top-right Y
             alwaysOnTop: false,
+            show: false, // Initially hidden
         });
     }
 
@@ -53,18 +54,52 @@ export class AthenaWidgetWindow {
             });
             
             logger.info('[AthenaWidgetWindow] Registered with Window Registry');
+
+            // Show window when ready
+            this.window.once('ready-to-show', () => {
+                this.show();
+                logger.info('[AthenaWidgetWindow] Window is ready and shown');
+            });
+
         } catch (error) {
             logger.error('[AthenaWidgetWindow] Failed to load HTML file:', error);
             throw error;
         }
-        // logger.info('[AthenaWidgetWindow] Attempting to open DevTools for AthenaWidget...');
-        // this.window.webContents.openDevTools({ mode: 'detach' });
-        // logger.info('[AthenaWidgetWindow] Called openDevTools for AthenaWidget.');
+    }
+
+    show(): void {
+        if (this.window && !this.window.isDestroyed()) {
+            // If window is minimized, restore it
+            if (this.window.isMinimized()) {
+                this.window.restore();
+            }
+            
+            // Show the window if it's hidden
+            if (!this.window.isVisible()) {
+                this.window.show();
+            }
+            
+            // Focus the window
+            this.window.focus();
+            this.window.webContents.focus();
+        }
     }
 
     focus(): void {
         if (this.window && !this.window.isDestroyed()) {
+            // If window is minimized, restore it
+            if (this.window.isMinimized()) {
+                this.window.restore();
+            }
+            
+            // Show the window if it's hidden
+            if (!this.window.isVisible()) {
+                this.window.show();
+            }
+            
+            // Focus the window
             this.window.focus();
+            this.window.webContents.focus();
         }
     }
 

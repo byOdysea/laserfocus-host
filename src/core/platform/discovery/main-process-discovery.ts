@@ -1,8 +1,10 @@
+import { createLogger } from '@/lib/utils/logger';
 import { AppIpcModule, AppMainProcessInstances } from '@core/platform/ipc/types';
-import * as logger from '@utils/logger';
 import { BrowserWindow, Display } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+
+const logger = createLogger('[UIDiscovery]');
 
 export interface AppModuleInstance {
     window?: BrowserWindow;
@@ -61,7 +63,7 @@ export class UIDiscoveryService {
         appInstances: AppMainProcessInstances;
         appModules: AppIpcModule[];
     }> {
-        logger.info('[UIDiscovery] Starting UI component discovery...');
+        logger.info('Starting UI component discovery...');
         
         await this.discoverUIComponents();
         await this.initializePlatformComponents();
@@ -75,23 +77,23 @@ export class UIDiscoveryService {
     async initializeUIWindow(windowName: string): Promise<AppModule | null> {
         const app = this.applications.get(windowName) || this.widgets.get(windowName);
         if (!app) {
-            logger.warn(`[UIDiscovery] UI Window ${windowName} not found`);
+            logger.warn(`UI Window ${windowName} not found`);
             return null;
         }
 
         if (app.instance) {
             // Check if the existing instance's window is destroyed
             if (app.instance.window && app.instance.window.isDestroyed()) {
-                logger.info(`[UIDiscovery] UI Window ${windowName} instance exists but window is destroyed - clearing instance`);
+                logger.info(`UI Window ${windowName} instance exists but window is destroyed - clearing instance`);
                 app.instance = undefined;
             } else {
-                logger.info(`[UIDiscovery] UI Window ${windowName} already initialized`);
+                logger.info(`UI Window ${windowName} already initialized`);
                 return app;
             }
         }
 
         if (!app.mainClass) {
-            logger.warn(`[UIDiscovery] UI Window ${windowName} has no main class`);
+            logger.warn(`UI Window ${windowName} has no main class`);
             return null;
         }
 
@@ -104,7 +106,7 @@ export class UIDiscoveryService {
             if (instance.init && typeof instance.init === 'function') {
                 instance.init();
                 app.instance = instance;
-                logger.info(`[UIDiscovery] ${app.type === 'widget' ? 'Widget' : 'Application'} ${windowName} initialized successfully`);
+                logger.info(`${app.type === 'widget' ? 'Widget' : 'Application'} ${windowName} initialized successfully`);
                 
                 // CRITICAL: Register IPC handlers for dynamically created apps
                 if (app.ipcHandlers && this.isValidIpcModule(app.ipcHandlers)) {
@@ -121,13 +123,13 @@ export class UIDiscoveryService {
                     // Register the IPC handlers for this app
                     const ipcModule = app.ipcHandlers;
                     ipcModule.registerMainProcessHandlers(ipcMain, instance, appInstances);
-                    logger.info(`[UIDiscovery] Registered IPC handlers for dynamically created ${app.type}: ${windowName}`);
+                    logger.info(`Registered IPC handlers for dynamically created ${app.type}: ${windowName}`);
 
                     // Add a listener to unregister handlers when the window is closed
                     if (instance.window && ipcModule.unregisterMainProcessHandlers) {
                         instance.window.on('closed', () => {
                             ipcModule.unregisterMainProcessHandlers!(ipcMain, instance);
-                            logger.info(`[UIDiscovery] Unregistered IPC handlers for ${app.type}: ${windowName}`);
+                            logger.info(`Unregistered IPC handlers for ${app.type}: ${windowName}`);
                         });
                     }
                 }
@@ -135,7 +137,7 @@ export class UIDiscoveryService {
                 return app;
             }
         } catch (error) {
-            logger.error(`[UIDiscovery] Failed to initialize ${app.type} ${windowName}:`, error);
+            logger.error(`Failed to initialize ${app.type} ${windowName}:`, error);
         }
 
         return null;
@@ -146,22 +148,22 @@ export class UIDiscoveryService {
         try {
             const registryModule = await import('./app-registry');
             this.registry = registryModule.createAppRegistry();
-            logger.info(`[UIDiscovery] Using auto-generated UI component registry...`);
+            logger.info(`Using auto-generated UI component registry...`);
             
             // Use registry-based discovery
             await this.discoverFromRegistry();
             
         } catch (error) {
-            logger.warn(`[UIDiscovery] Could not load UI component registry, falling back to dynamic discovery:`, error);
+            logger.warn(`Could not load UI component registry, falling back to dynamic discovery:`, error);
             this.registry = { mainClasses: new Map(), ipcModules: new Map() };
             
             // Fallback to dynamic file system discovery
             await this.discoverUIComponentsDynamically();
         }
         
-        logger.info(`[UIDiscovery] Discovered ${this.platformComponents.size} platform UI components:`, Array.from(this.platformComponents.keys()));
-        logger.info(`[UIDiscovery] Discovered ${this.applications.size} applications:`, Array.from(this.applications.keys()));
-        logger.info(`[UIDiscovery] Discovered ${this.widgets.size} widgets:`, Array.from(this.widgets.keys()));
+        logger.info(`Discovered ${this.platformComponents.size} platform UI components:`, Array.from(this.platformComponents.keys()));
+        logger.info(`Discovered ${this.applications.size} applications:`, Array.from(this.applications.keys()));
+        logger.info(`Discovered ${this.widgets.size} widgets:`, Array.from(this.widgets.keys()));
     }
 
     /**
@@ -169,7 +171,7 @@ export class UIDiscoveryService {
      */
     private async discoverFromRegistry(): Promise<void> {
         if (!this.registry) {
-            logger.error(`[UIDiscovery] Registry is null, cannot discover UI components`);
+            logger.error(`Registry is null, cannot discover UI components`);
             return;
         }
         
@@ -184,25 +186,25 @@ export class UIDiscoveryService {
             
             if (mainClass) {
                 app.mainClass = mainClass;
-                logger.debug(`[UIDiscovery] Found main class for ${appName}: ${mainClass.name}`);
+                logger.debug(`Found main class for ${appName}: ${mainClass.name}`);
             }
             
             const ipcHandlers = this.registry.ipcModules.get(appName);
             if (ipcHandlers && this.isValidIpcModule(ipcHandlers)) {
                 app.ipcHandlers = ipcHandlers;
-                logger.debug(`[UIDiscovery] Found IPC handlers for ${appName}`);
+                logger.debug(`Found IPC handlers for ${appName}`);
             }
             
             if (app.mainClass || app.ipcHandlers) {
                 if (app.type === 'platform') {
                     this.platformComponents.set(appName, app);
-                    logger.debug(`[UIDiscovery] Registered platform UI component: ${appName}`);
+                    logger.debug(`Registered platform UI component: ${appName}`);
                 } else if (app.type === 'widget') {
                     this.widgets.set(appName, app);
-                    logger.debug(`[UIDiscovery] Registered widget: ${appName}`);
+                    logger.debug(`Registered widget: ${appName}`);
                 } else {
                     this.applications.set(appName, app);
-                    logger.debug(`[UIDiscovery] Registered application: ${appName}`);
+                    logger.debug(`Registered application: ${appName}`);
                 }
             }
         }
@@ -220,13 +222,13 @@ export class UIDiscoveryService {
                 
                 if (app.type === 'platform') {
                     this.platformComponents.set(appName, app);
-                    logger.debug(`[UIDiscovery] Registered IPC-only platform UI component: ${appName}`);
+                    logger.debug(`Registered IPC-only platform UI component: ${appName}`);
                 } else if (app.type === 'widget') {
                     this.widgets.set(appName, app);
-                    logger.debug(`[UIDiscovery] Registered IPC-only widget: ${appName}`);
+                    logger.debug(`Registered IPC-only widget: ${appName}`);
                 } else {
                     this.applications.set(appName, app);
-                    logger.debug(`[UIDiscovery] Registered IPC-only application: ${appName}`);
+                    logger.debug(`Registered IPC-only application: ${appName}`);
                 }
             }
         }
@@ -301,7 +303,7 @@ export class UIDiscoveryService {
 
     private async initializePlatformComponents(): Promise<void> {
         // Direct instantiation - using the clean new bridge approach
-        logger.info('[UIDiscovery] Using direct instantiation for platform components');
+        logger.info('Using direct instantiation for platform components');
         const { primaryDisplay, viteDevServerUrl, preloadBasePath } = this.config;
         
         for (const [appName, app] of this.platformComponents) {
@@ -314,10 +316,10 @@ export class UIDiscoveryService {
                     if (instance.init && typeof instance.init === 'function') {
                         instance.init();
                         app.instance = instance;
-                        logger.info(`[UIDiscovery] Initialized platform UI component: ${appName}`);
+                        logger.info(`Initialized platform UI component: ${appName}`);
                     }
                 } catch (error) {
-                    logger.error(`[UIDiscovery] Failed to initialize platform UI component ${appName}:`, error);
+                    logger.error(`Failed to initialize platform UI component ${appName}:`, error);
                 }
             }
         }
@@ -381,7 +383,7 @@ export class UIDiscoveryService {
      */
     async reloadRegistry(): Promise<void> {
         try {
-            logger.info('[UIDiscovery] Reloading app registry for hot discovery...');
+            logger.info('Reloading app registry for hot discovery...');
             
             // Clear existing registry reference to force reload
             delete require.cache[require.resolve('./app-registry')];
@@ -402,12 +404,12 @@ export class UIDiscoveryService {
             }
             
             const totalApps = this.applications.size + this.widgets.size + this.platformComponents.size;
-            logger.info(`[UIDiscovery] Registry reloaded: ${totalApps} components discovered`);
-            logger.info(`[UIDiscovery] Applications: ${Array.from(this.applications.keys()).join(', ') || 'none'}`);
-            logger.info(`[UIDiscovery] Widgets: ${Array.from(this.widgets.keys()).join(', ') || 'none'}`);
+            logger.info(`Registry reloaded: ${totalApps} components discovered`);
+            logger.info(`Applications: ${Array.from(this.applications.keys()).join(', ') || 'none'}`);
+            logger.info(`Widgets: ${Array.from(this.widgets.keys()).join(', ') || 'none'}`);
             
         } catch (error) {
-            logger.error('[UIDiscovery] Failed to reload registry:', error);
+            logger.error('Failed to reload registry:', error);
             throw error;
         }
     }
@@ -416,12 +418,12 @@ export class UIDiscoveryService {
      * NEW: Dynamic discovery by scanning the file system
      */
     private async discoverUIComponentsDynamically(): Promise<void> {
-        logger.info('[UIDiscovery] Starting dynamic file system discovery...');
+        logger.info('Starting dynamic file system discovery...');
         
         const uiBasePath = path.join(process.cwd(), 'src', 'ui');
         const discoveredComponents = await this.scanUIDirectory(uiBasePath);
         
-        logger.info(`[UIDiscovery] Discovered ${discoveredComponents.length} components via file system scan`);
+        logger.info(`Discovered ${discoveredComponents.length} components via file system scan`);
         
         for (const component of discoveredComponents) {
             const app: AppModule = {
@@ -441,12 +443,12 @@ export class UIDiscoveryService {
                     for (const [key, value] of Object.entries(mainModule)) {
                         if (typeof value === 'function' && (key.includes('Window') || key.includes(component.name))) {
                             app.mainClass = value as AppModuleConstructor;
-                            logger.debug(`[UIDiscovery] Loaded main class for ${component.name}: ${key}`);
+                            logger.debug(`Loaded main class for ${component.name}: ${key}`);
                             break;
                         }
                     }
                 } catch (error) {
-                    logger.debug(`[UIDiscovery] Could not load main class for ${component.name}:`, error);
+                    logger.debug(`Could not load main class for ${component.name}:`, error);
                 }
             }
             
@@ -457,10 +459,10 @@ export class UIDiscoveryService {
                     
                     if (ipcModule.default && this.isValidIpcModule(ipcModule.default)) {
                         app.ipcHandlers = ipcModule.default;
-                        logger.debug(`[UIDiscovery] Loaded IPC handlers for ${component.name}`);
+                        logger.debug(`Loaded IPC handlers for ${component.name}`);
                     }
                 } catch (error) {
-                    logger.debug(`[UIDiscovery] Could not load IPC handlers for ${component.name}:`, error);
+                    logger.debug(`Could not load IPC handlers for ${component.name}:`, error);
                 }
             }
             
@@ -474,7 +476,7 @@ export class UIDiscoveryService {
             }
         }
         
-        logger.info(`[UIDiscovery] Dynamic discovery complete: Platform=${this.platformComponents.size}, Apps=${this.applications.size}, Widgets=${this.widgets.size}`);
+        logger.info(`Dynamic discovery complete: Platform=${this.platformComponents.size}, Apps=${this.applications.size}, Widgets=${this.widgets.size}`);
     }
 
     /**
@@ -524,7 +526,7 @@ export class UIDiscoveryService {
             }
             
         } catch (error) {
-            logger.warn('[UIDiscovery] Error scanning UI directory:', error);
+            logger.warn('Error scanning UI directory:', error);
         }
         
         return components;
@@ -567,7 +569,7 @@ export class UIDiscoveryService {
             }
             
         } catch (error) {
-            logger.debug(`[UIDiscovery] Could not analyze component ${componentName}:`, error);
+            logger.debug(`Could not analyze component ${componentName}:`, error);
         }
         
         return null;
@@ -625,6 +627,6 @@ export function getUIDiscoveryService(): UIDiscoveryService | null {
 export function destroyUIDiscoveryService(): void {
     if (uiDiscoveryService) {
         uiDiscoveryService = null;
-        logger.info('[UIDiscovery] Destroyed UI discovery service');
+        logger.info('Destroyed UI discovery service');
     }
 } 

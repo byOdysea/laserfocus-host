@@ -35,16 +35,36 @@ const SettingsIpcHandlers: AppIpcModule = {
         // Register update configuration handler
         ipcMain.handle('settings:update-config', async (event, configUpdates: any) => {
             try {
-                logger.info(`[settingsIPC] Updating configuration:`, configUpdates);
-                
                 const configManager = ConfigurationManager.getInstance();
-                const result = await configManager.update(configUpdates);
+                const oldConfig = configManager.get();
+
+                // Check if only the provider config has changed
+                const providerChanged = JSON.stringify(configUpdates.provider) !== JSON.stringify(oldConfig.provider);
+                const otherKeys = Object.keys(configUpdates).filter(k => k !== 'provider');
+
+                if (providerChanged && otherKeys.length === 0) {
+                    // Provider-only change: Update config silently and notify agent directly
+                    logger.debug('[settingsIPC] Provider-only change detected. Notifying agent directly.');
+                    await configManager.update(configUpdates, { silent: true });
+                    
+                    const { getAgentBridge } = await import('@core/platform/ipc/agent-bridge');
+                    const agentBridge = getAgentBridge();
+                    if (agentBridge?.isReady()) {
+                        const athenaAgent = (agentBridge as any).athenaAgent;
+                        if (athenaAgent?.reloadConfigurationManually) {
+                            await athenaAgent.reloadConfigurationManually();
+                            logger.info('[settingsIPC] Agent notified directly to reload configuration.');
+                        }
+                    }
+                } else {
+                    // Other changes: Perform a full update
+                    logger.info(`[settingsIPC] Updating configuration with multiple changes.`);
+                    await configManager.update(configUpdates);
+                }
+
                 logger.info(`[settingsIPC] Configuration updated successfully`);
-                
-                // Note: Agent now handles its own tool refresh via persistent MCP event listeners
-                // No need for external coordination - agent will automatically refresh when MCP servers connect
-                
                 return { success: true, config: configManager.get() };
+
             } catch (error) {
                 logger.error(`[settingsIPC] Failed to update configuration:`, error);
                 return { success: false, error: error instanceof Error ? error.message : String(error) };

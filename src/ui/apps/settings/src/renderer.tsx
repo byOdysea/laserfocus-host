@@ -1,7 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { SettingsApp } from './components/SettingsApp';
 
-console.log('[Settings Renderer] Starting settings app initialization...');
+console.info('Starting settings app initialization...');
 
 const container = document.getElementById('settings-root');
 if (!container) {
@@ -9,10 +9,10 @@ if (!container) {
     throw new Error('Failed to find the root element');
 }
 
-console.log('[Settings Renderer] Root element found, creating React root...');
+console.info('[Settings Renderer] Root element found, creating React root...');
 const root = createRoot(container);
 
-console.log('[Settings Renderer] Rendering SettingsApp...');
+console.info('[Settings Renderer] Rendering SettingsApp...');
 root.render(<SettingsApp />);
 
-console.log('[Settings Renderer] Settings app render call completed');
+console.info('[Settings Renderer] Settings app render call completed');

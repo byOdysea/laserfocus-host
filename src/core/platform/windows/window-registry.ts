@@ -5,8 +5,10 @@
  * Enables dynamic modularity and better inter-component communication.
  */
 
-import logger from '@utils/logger';
+import { createLogger } from '@/lib/utils/logger';
 import { BrowserWindow } from 'electron';
+
+const logger = createLogger('[WindowRegistry]');
 
 export interface UIWindowInfo {
     id: string;                    // Unique identifier (e.g. "athena-widget")
@@ -130,7 +132,7 @@ export class WindowRegistry {
         }
         // Only log warnings for debug builds to reduce log noise
         if (process.env.NODE_ENV === 'development') {
-            logger.warn(`[WindowRegistry] Failed to send message to window: ${windowId}`);
+            logger.warn(`Failed to send message to window: ${windowId}`);
         }
         return false;
     }
@@ -150,7 +152,7 @@ export class WindowRegistry {
         
         // Only log warnings in development to reduce log noise
         if (process.env.NODE_ENV === 'development' && sentCount === 0 && targetWindows.length > 0) {
-            logger.warn(`[WindowRegistry] Failed to send message to windows with capability "${capability}"`);
+            logger.warn(`Failed to send message to windows with capability "${capability}"`);
         }
         
         return sentCount;
