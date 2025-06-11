@@ -26,7 +26,7 @@ import { getCanvasStateParser } from './prompts/canvas-state-parser';
 import { buildCoreSystemPrompt, buildMCPSummary } from "./prompts/core-system";
 import { buildPlatformComponentsDescription } from "./prompts/layout-calculations";
 import { buildUIComponentsSummary } from "./prompts/ui-components";
-import { ToolStatusCallback, ConversationUpdate } from './types/tool-status';
+import { ToolStatusCallback, ConversationUpdate, ToolStatusUpdate } from './types/tool-status';
 
 // Exported types for agent status
 export type AgentConnectionStatus = 'unknown' | 'connected' | 'failed' | 'no-key' | 'local' | 'disabled' | 'configured' | 'error' | 'disconnected'; // Added 'disabled', 'configured', 'error', 'disconnected' to cover all known states
@@ -76,7 +76,7 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     private workflow: any = null;
     private threadId: string = `athena-${Date.now()}`;
     private initialized = false;
-    private connectionStatus: 'unknown' | 'connected' | 'failed' | 'no-key' | 'local' = 'unknown';
+    private connectionStatus: AgentConnectionStatus = 'unknown';
     private mcpEventCleanup: (() => void) | null = null;
     private lastError?: string; // Simple error tracking
     
@@ -144,7 +144,6 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
             this.setupMCPEventListeners();
             
             await this.reloadConfiguration();
-            await this.initializeLLM();
             
             // Listen for API key changes and reinitialize LLM
             apiKeyManager.onChange((provider) => {
@@ -249,67 +248,64 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
      * Initialize LLM with factory pattern and proper error handling
      */
     private async initializeLLM(): Promise<void> {
-        const providerConfig = this.getConfig();
-        this.connectionStatus = 'unknown'; // Reset status at the beginning
-        this.lastError = undefined;
+        try {
+            const providerConfig = this.getConfig();
+            if (!providerConfig || !providerConfig.service || providerConfig.service === 'disabled') {
+                if (providerConfig?.service === 'disabled') {
+                    logger.info('[Athena] LLM service is disabled by configuration.');
+                    this.connectionStatus = 'disabled';
+                    this.lastError = undefined;
+                } else {
+                    this.handleValidationFailure(providerConfig, ['Provider not configured']);
+                }
+                this.llm = null;
+                this.workflow = null;
+                return;
+            }
 
-        if (providerConfig.service === 'disabled') {
-            logger.info('[Athena] LLM service is disabled by configuration.');
+            // Get the latest API key directly from the source of truth
+            const apiKey = await apiKeyManager.getApiKey(providerConfig.service);
+            const effectiveConfig = { ...providerConfig, apiKey: apiKey || '' };
+
+            logger.debug(`[Athena] Retrieved API key for validation. Has key: ${!!apiKey}. Key ends with: ${apiKey ? '...' + apiKey.slice(-4) : 'N/A'}`);
+            logger.info(`[Athena] Initializing LLM: ${effectiveConfig.service}/${effectiveConfig.model}`);
+
+            // Validate provider configuration
+            const errors = LLMProviderFactory.validateProvider(effectiveConfig);
+            if (this.shouldFailValidation(effectiveConfig, errors)) {
+                this.handleValidationFailure(effectiveConfig, errors);
+                return;
+            }
+
+            // Create LLM instance
+            this.llm = await this.llmFactory.createLLM({
+                provider: effectiveConfig,
+                tools: [] // Tools will be added in _rebuildWorkflow
+            });
+            this.connectionStatus = 'connected';
+            this.lastError = undefined;
+            logger.info(`[Athena] LLM initialized successfully: ${effectiveConfig.service}`);
+
+            // Rebuild the workflow with the new LLM
+            await this._rebuildWorkflow();
+
+        } catch (error: any) {
+            const providerConfig = this.getConfig();
+            const errorMessage = error.message || 'Unknown error';
+            logger.error(`[Athena] Failed to initialize LLM: ${errorMessage}`);
             this.llm = null;
             this.workflow = null;
-            this.connectionStatus = 'local'; // Or a dedicated 'disabled' status if preferred
-            this.lastError = undefined;
-            this.initialized = true; // Agent is in a valid, known (non-LLM) state
-            // No need to proceed with LLM-specific setup or validation
-            return;
-        }
-
-        try {
-            logger.info(`[Athena] Initializing LLM: ${providerConfig.service}/${providerConfig.model}`);
-            
-            // Validate configuration
-            const errors = await this.llmFactory.validateProviderAsync(providerConfig);
-            if (this.shouldFailValidation(providerConfig, errors)) {
-                this.handleValidationFailure(providerConfig, errors);
-                return;
+            this.connectionStatus = 'failed';
+            this.lastError = errorMessage;
+            if (this.statusCallback) {
+                const statusUpdate: ToolStatusUpdate = {
+                    status: 'error',
+                    toolName: 'LLMInitialization',
+                    timestamp: new Date().toISOString(),
+                    metadata: { error: errorMessage, provider: providerConfig?.service, model: providerConfig?.model }
+                };
+                this.statusCallback(statusUpdate);
             }
-
-            // Get canvas tools
-            const canvasTools = this.canvasEngine.getTools();
-            const allTools = [...canvasTools, ...this.getAdditionalTools()];
-
-            // Check if tools have changed to avoid unnecessary recreation
-            const toolsHash = this.hashTools(allTools, providerConfig);
-            if (this.llm && this.workflow && this.lastToolsHash === toolsHash) {
-                logger.debug('[Athena] Tools and config unchanged, reusing existing LLM');
-                this.connectionStatus = 'connected'; // Restore status as we are reusing a connected LLM
-                this.lastError = undefined; // Clear any previous transient error
-                return;
-            }
-
-            // Clean up existing LLM reference
-            if (this.llm) {
-                logger.debug('[Athena] Releasing previous LLM instance');
-            }
-
-            // Create LLM
-            this.llm = await this.llmFactory.createLLM({
-                provider: providerConfig,
-                tools: allTools
-            });
-
-            // Create workflow
-            if (this.llm) {
-                this.workflow = this.workflowManager.createWorkflow(this.llm, allTools, this.statusCallback);
-            }
-
-            // Cache tools hash
-            this.lastToolsHash = toolsHash;
-
-            this.connectionStatus = 'connected';
-            logger.info(`[Athena] LLM initialized successfully`);
-        } catch (error) {
-            this.handleLLMInitializationError(error);
         }
     }
 
@@ -319,26 +315,14 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
         return errors.length > 0 && providerConfig.service !== 'disabled';
     }
 
-    private handleValidationFailure(providerConfig: ProviderConfig, errors: string[]): void {
-        const errorMsg = `Provider validation failed for ${providerConfig.service}: ${errors.join(', ')}`;
+    private handleValidationFailure(providerConfig: ProviderConfig | undefined, errors: string[]): void {
+        const service = providerConfig?.service || 'unknown';
+        const errorMsg = `Provider validation failed for ${service}: ${errors.join(', ')}`;
         logger.error(`[Athena] ${errorMsg}`);
-        this.connectionStatus = 'failed'; // Changed from 'error'
+        this.llm = null;
+        this.workflow = null;
+        this.connectionStatus = 'failed';
         this.lastError = errorMsg;
-        // Removed statusCallback call; this callback is for ToolStatusUpdate.
-        // Agent initialization errors are logged and reflected in connectionStatus.
-        // Throw to prevent further initialization steps if validation fails critically.
-        throw new Error(errorMsg);
-    }
-
-    private handleLLMInitializationError(error: any): void {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.error('[Athena] Failed to initialize LLM:', errorMessage);
-        this.connectionStatus = 'failed'; // Changed from 'error'
-        this.lastError = `LLM Initialization Failed: ${errorMessage}`;
-        // Removed statusCallback call; this callback is for ToolStatusUpdate.
-        // Agent initialization errors are logged and reflected in connectionStatus.
-        // Optionally, re-throw if this error should halt further operations or be caught upstream.
-        // throw error; 
     }
 
     /**
@@ -447,22 +431,53 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
         if (this.initialized) {
             logger.debug('[Athena] Refreshing agent tools...');
             try {
-                // ✅ UPDATED: ConfigurableComponent automatically handles config changes
-                // Also ensure MCP manager has latest configuration via its own ConfigurableComponent
-                const configManager = ConfigurationManager.getInstance();
-                const fullConfig = configManager.get();
-                if (fullConfig.integrations?.mcp) {
-                    // MCP manager will automatically sync connections when config changes
-                    // via the ConfigurableComponent's change handler
-                }
-                
-                // Rebuild workflow with updated MCP tools
-                await this.initializeLLM(); 
-                
+                // Rebuild workflow with updated tools
+                await this._rebuildWorkflow();
                 logger.debug('[Athena] Agent tools refreshed successfully');
             } catch (error) {
                 logger.error('[Athena] Failed to refresh agent tools:', error);
             }
+        }
+    }
+
+    /**
+     * Rebuilds the agent's workflow with the current LLM and tools.
+     * This should be called after the LLM is initialized or when tools change.
+     */
+    private async _rebuildWorkflow(): Promise<void> {
+        if (!this.llm) {
+            logger.warn('[Athena] Cannot rebuild workflow without an LLM instance.');
+            this.workflow = null;
+            return;
+        }
+
+        try {
+            logger.debug('[Athena] Rebuilding workflow...');
+            const providerConfig = this.getConfig();
+
+            // Get all tools
+            const canvasTools = this.canvasEngine.getTools();
+            const allTools = [...canvasTools, ...this.getAdditionalTools()];
+
+            // Check if tools have changed to avoid unnecessary recreation
+            const toolsHash = this.hashTools(allTools, providerConfig);
+            if (this.workflow && this.lastToolsHash === toolsHash) {
+                logger.debug('[Athena] Tools unchanged, reusing existing workflow.');
+                return;
+            }
+            
+            logger.info(`[Athena] Rebuilding workflow with ${allTools.length} tools.`);
+
+            // Create workflow
+            this.workflow = this.workflowManager.createWorkflow(this.llm, allTools, this.statusCallback);
+
+            // Cache tools hash
+            this.lastToolsHash = toolsHash;
+
+            logger.debug('[Athena] Workflow rebuilt successfully.');
+        } catch (error) {
+            logger.error('[Athena] Failed to rebuild workflow:', error);
+            this.workflow = null; // Ensure workflow is null on failure
         }
     }
     
@@ -608,18 +623,14 @@ export class AthenaAgent extends ConfigurableComponent<ProviderConfig> {
     }
 
     private hashTools(tools: DynamicStructuredTool[], providerConfig: ProviderConfig): string {
-        // Create lightweight hash of tool names and provider config
-        const toolNames = tools.map(t => t.name).sort().join(',');
-        const configKey = `${providerConfig.service}:${providerConfig.model}:${toolNames}`;
-        
-        // Simple fast hash function
-        let hash = 0;
-        for (let i = 0; i < configKey.length; i++) {
-            const char = configKey.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32-bit integer
+        try {
+            const toolNames = tools.map(t => t.name).sort().join(',');
+            const configString = `${providerConfig.service}-${providerConfig.model}`;
+            return createHash('sha256').update(toolNames + configString).digest('hex');
+        } catch (error) {
+            logger.warn('[Athena] Failed to hash tools:', error);
+            return `error-${Date.now()}`;
         }
-        return hash.toString(36);
     }
     
     private hashConfig(config: ProviderConfig): string {
@@ -671,6 +682,7 @@ class LangGraphWorkflowManager implements WorkflowManager {
     }
 
     createWorkflow(llm: BaseChatModel, tools: DynamicStructuredTool[], statusCallback?: ToolStatusCallback): any {
+        const llmWithTools = llm.bindTools ? llm.bindTools(tools) : llm;
         const toolNode = new ToolNode(tools);
         
         const shouldContinue = (state: typeof MessagesAnnotation.State) => {
@@ -689,12 +701,12 @@ class LangGraphWorkflowManager implements WorkflowManager {
             return END;
         };
 
-        const callAgent = async (state: typeof MessagesAnnotation.State) => {
+        const callAgent = async (state: typeof MessagesAnnotation.State, config?: RunnableConfig) => {
             const systemPrompt = await this.buildSystemPromptCached(llm);
             const messages = [new SystemMessage(systemPrompt), ...state.messages];
             
             try {
-                const response = await llm.invoke(messages);
+                const response = await llmWithTools.invoke(messages, config);
                 return { messages: [response] };
             } catch (error: any) {
                 logger.error(`[Athena] LLM invocation failed:`, error);

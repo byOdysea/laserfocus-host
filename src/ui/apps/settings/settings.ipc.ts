@@ -326,42 +326,6 @@ const SettingsIpcHandlers: AppIpcModule = {
             }
         });
 
-        // Toggle MCP server enabled state
-        ipcMain.handle('settings:toggle-mcp-server-enabled', async (event, serverId: string, enabled: boolean) => {
-            try {
-                const configManager = ConfigurationManager.getInstance();
-                const config = configManager.get();
-                const mcpConfig = { ...config.integrations?.mcp };
-                
-                if (!mcpConfig.servers) {
-                    return { success: false, error: 'No MCP servers configured' };
-                }
-                
-                const serverIndex = mcpConfig.servers.findIndex(s => s.name === serverId);
-                if (serverIndex === -1) {
-                    return { success: false, error: 'Server not found' };
-                }
-                
-                mcpConfig.servers[serverIndex].enabled = enabled;
-                
-                await configManager.update({
-                    integrations: {
-                        ...config.integrations,
-                        mcp: {
-                            enabled: mcpConfig.enabled ?? false,
-                            servers: mcpConfig.servers ?? [],
-                            ...mcpConfig
-                        }
-                    }
-                });
-                
-                return { success: true };
-            } catch (error) {
-                logger.error('[settingsIPC] Error toggling MCP server:', error);
-                return { success: false, error: 'Failed to toggle MCP server' };
-            }
-        });
-
         // Open BYOK widget for API key management
         ipcMain.on('settings:open-byok-widget', () => {
             const byokInstance = allAppInstances?.get('byokwidget');
@@ -397,7 +361,6 @@ const SettingsIpcHandlers: AppIpcModule = {
         ipcMain.removeHandler('settings:update-mcp-server');
         ipcMain.removeHandler('settings:add-mcp-server');
         ipcMain.removeHandler('settings:remove-mcp-server');
-        ipcMain.removeHandler('settings:toggle-mcp-server-enabled');
         ipcMain.removeHandler('settings:focus-byok-widget');
     }
 };

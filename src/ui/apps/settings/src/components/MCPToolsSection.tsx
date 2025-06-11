@@ -1,5 +1,6 @@
 import React from 'react';
 
+// Define local interfaces to resolve 'any' types within this component
 interface MCPServer {
     name: string;
     enabled: boolean;
@@ -9,15 +10,24 @@ interface MCPServer {
     error?: string;
 }
 
+interface MCPConfig {
+    enabled: boolean;
+    servers: MCPServer[];
+}
+
 interface MCPToolsSectionProps {
-    config: any;
+    config: {
+        integrations?: {
+            mcp?: MCPConfig;
+        };
+    } | null;
     onUpdate: (updates: any) => void;
 }
 
 const ServerRow: React.FC<{
     server: MCPServer;
-    onToggle: (enabled: boolean) => void;
-}> = ({ server, onToggle }: { server: MCPServer; onToggle: (enabled: boolean) => void }) => {
+    onToggle: () => void;
+}> = ({ server, onToggle }: { server: MCPServer; onToggle: () => void }) => {
     const getStatusColor = () => {
         if (!server.enabled) return '#666'; // Disabled - gray
         if (server.error) return '#ef4444'; // Error - red (check error first!)
@@ -60,7 +70,7 @@ const ServerRow: React.FC<{
                         <input
                             type="checkbox"
                             checked={server.enabled}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onToggle(e.target.checked)}
+                            onChange={onToggle} // Directly use the passed-in handler
                         />
                         <span className="slider"></span>
                     </label>
@@ -79,167 +89,102 @@ const ServerRow: React.FC<{
 };
 
 const MCPToolsSection: React.FC<MCPToolsSectionProps> = ({ config, onUpdate }: MCPToolsSectionProps) => {
-    const [servers, setServers] = React.useState<MCPServer[]>([]);
+    const [serverStatuses, setServerStatuses] = React.useState<Map<string, Partial<MCPServer>>>(new Map());
     const [showJsonEditor, setShowJsonEditor] = React.useState(false);
     const [jsonValue, setJsonValue] = React.useState('');
     const [jsonError, setJsonError] = React.useState('');
 
-    // Load server status from the backend
-    const loadServers = async () => {
-        try {
-            const result = await window.settingsAPI.getMCPStatus();
-            if (!result.success) {
-                console.error('Error loading servers:', result.error);
-                return;
-            }
-            const mcpConfig = config.integrations?.mcp || {};
-            const { agentReady, connectionStatus, toolCounts } = result.status;
-            
-            let serverList: MCPServer[] = [];
-            
-            if (Array.isArray(mcpConfig.servers)) {
-                // Array format: servers stored as array of objects
-                serverList = mcpConfig.servers.map((server: any) => {
-                    const serverName = server.name;
-                    const isEnabled = server.enabled !== false;
-                    const connectionInfo = connectionStatus[serverName];
-                    const isConnected = connectionInfo?.connected || false;
-                    const toolCount = toolCounts[serverName] || 0;
-                    const hasTools = toolCount > 0;
-                    
-                    return {
-                        name: serverName,
-                        enabled: isEnabled,
-                        connected: isConnected,
-                        agentCanUseTool: agentReady && isEnabled && hasTools,
-                        toolCount,
-                        error: connectionInfo?.error
-                    };
-                });
-            } else if (mcpConfig.servers && typeof mcpConfig.servers === 'object') {
-                // Object format: servers stored as key-value pairs
-                serverList = Object.entries(mcpConfig.servers).map(([id, serverConfig]: [string, any]) => {
-                    const isEnabled = serverConfig.enabled !== false;
-                    const connectionInfo = connectionStatus[id];
-                    const isConnected = connectionInfo?.connected || false;
-                    const toolCount = toolCounts[id] || 0;
-                    const hasTools = toolCount > 0;
-                    
-                    return {
-                        name: id,
-                        enabled: isEnabled,
-                        connected: isConnected,
-                        agentCanUseTool: agentReady && isEnabled && hasTools,
-                        toolCount,
-                        error: connectionInfo?.error
-                    };
-                });
-            }
-            
-            setServers(serverList);
-        } catch (error) {
-            console.error('Error loading servers:', error);
-        }
-    };
-
-    // Load servers when config changes
+    // Poll for live server statuses (connected, tool count, etc.)
     React.useEffect(() => {
-        loadServers();
-    }, [config]);
-
-    // Set up reliable polling for MCP status updates (proven to work well)
-    React.useEffect(() => {
-        const pollInterval = setInterval(() => {
-            loadServers();
-        }, 2000); // Poll every 2 seconds - reliable and not too aggressive
-        
-        return () => {
-            clearInterval(pollInterval);
+        const pollStatuses = async () => {
+            try {
+                const result = await window.settingsAPI.getMCPStatus();
+                if (result.success && result.status) {
+                    const { connectionStatus, toolCounts, agentReady } = result.status;
+                    setServerStatuses((prevStatuses: Map<string, Partial<MCPServer>>) => {
+                        const newStatuses = new Map(prevStatuses);
+                        Object.keys(connectionStatus).forEach(serverName => {
+                            const isEnabledInConfig = (config?.integrations?.mcp?.servers || []).find(
+                                (s: MCPServer) => s.name === serverName
+                            )?.enabled !== false;
+                            const hasTools = (toolCounts[serverName] || 0) > 0;
+                            newStatuses.set(serverName, {
+                                connected: connectionStatus[serverName]?.connected,
+                                error: connectionStatus[serverName]?.error,
+                                toolCount: toolCounts[serverName] || 0,
+                                agentCanUseTool: agentReady && isEnabledInConfig && hasTools
+                            });
+                        });
+                        return newStatuses;
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to poll MCP statuses:', error);
+            }
         };
-    }, [config]); // Restart polling when config changes
 
-    // Update JSON editor when config changes
+        pollStatuses(); // Initial poll
+        const intervalId = setInterval(pollStatuses, 2500); // Poll every 2.5 seconds
+
+        return () => clearInterval(intervalId);
+    }, [config]); // Re-run if config changes to update agentCanUseTool status
+
+    // Update JSON editor when config prop changes
     React.useEffect(() => {
-        const mcpConfig = config.integrations?.mcp || {};
+        const mcpConfig = config?.integrations?.mcp || {};
         setJsonValue(JSON.stringify(mcpConfig, null, 2));
         setJsonError('');
     }, [config]);
 
-    const handleServerToggle = async (serverName: string, enabled: boolean) => {
-        try {
-            const result = await window.settingsAPI.toggleMCPServer(serverName, !enabled);
-            if (!result.success) {
-                console.error('Error toggling server:', result.error);
-                return;
-            }
-            const mcpConfig = config.integrations?.mcp || {};
-            let updatedServers;
-            
-            if (Array.isArray(mcpConfig.servers)) {
-                // Array format: update the specific server in the array
-                updatedServers = mcpConfig.servers.map((server: any) => 
-                    server.name === serverName 
-                        ? { ...server, enabled }
-                        : server
-                );
-            } else {
-                // Object format: convert to array format for schema compliance
-                updatedServers = Object.entries(mcpConfig.servers || {}).map(([name, serverConfig]: [string, any]) => ({
-                    name,
-                    enabled: name === serverName ? enabled : (serverConfig.enabled !== false),
-                    ...serverConfig
-                }));
-            }
-            
-            const updatedMCPConfig = {
-                ...mcpConfig,
-                servers: updatedServers
-            };
+    const handleServerToggle = (serverName: string) => {
+        const mcpConfig = config?.integrations?.mcp || { enabled: false, servers: [] };
+        const updatedServers = (mcpConfig.servers || []).map((server: MCPServer) =>
+            server.name === serverName
+                ? { ...server, enabled: !server.enabled } // Simple toggle
+                : server
+        );
 
-            // Update through parent's onUpdate to integrate with main save flow
-            onUpdate({
-                integrations: {
-                    ...config.integrations,
-                    mcp: updatedMCPConfig
-                }
-            });
-
-        } catch (error) {
-            console.error('Error toggling server:', error);
-        }
+        onUpdate({
+            integrations: {
+                ...config?.integrations,
+                mcp: {
+                    ...mcpConfig,
+                    servers: updatedServers,
+                },
+            },
+        });
     };
 
     const handleJsonChange = (value: string) => {
         setJsonValue(value);
-        setJsonError('');
-        
         try {
             const parsed = JSON.parse(value);
-            // Update through parent's onUpdate to integrate with main save flow
-            onUpdate({
-                integrations: {
-                    ...config.integrations,
-                    mcp: parsed
-                }
-            });
-        } catch (error) {
+            onUpdate({ integrations: { ...config?.integrations, mcp: parsed } });
+            setJsonError('');
+        } catch (e: any) {
             setJsonError('Invalid JSON syntax');
         }
     };
+
+    // Derive the servers to render directly from props and polled status state
+    const serversToRender = (config?.integrations?.mcp?.servers || []).map((server: MCPServer) => ({
+        ...server, // Data from config (name, enabled)
+        ...(serverStatuses.get(server.name) || {}), // Live data from polling (connected, toolCount, error)
+    }));
 
     return (
         <div className="mcp-tools-section">
             <div className="mcp-header">
                 <h4>MCP Servers</h4>
-                <span className="server-count">{servers.length} server{servers.length !== 1 ? 's' : ''}</span>
+                <span className="server-count">{serversToRender.length} server{serversToRender.length !== 1 ? 's' : ''}</span>
             </div>
             
             <div className="server-list">
-                {servers.map((server: MCPServer) => (
+                {serversToRender.map((server: MCPServer) => (
                     <ServerRow
                         key={server.name}
                         server={server}
-                        onToggle={(enabled: boolean) => handleServerToggle(server.name, enabled)}
+                        onToggle={() => handleServerToggle(server.name)}
                     />
                 ))}
             </div>
@@ -293,4 +238,4 @@ const MCPToolsSection: React.FC<MCPToolsSectionProps> = ({ config, onUpdate }: M
     );
 };
 
-export default MCPToolsSection; 
+export default MCPToolsSection;

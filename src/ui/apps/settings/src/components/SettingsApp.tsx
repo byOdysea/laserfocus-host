@@ -1,6 +1,17 @@
 import React from 'react';
 import MCPToolsSection from './MCPToolsSection';
 
+// Define a local interface for the settings shape to resolve 'any' types.
+interface AppSettings {
+    integrations?: {
+        mcp?: {
+            enabled: boolean;
+            servers: Array<{ name: string; enabled: boolean; }>;
+        };
+    };
+    [key: string]: any; // Allow other sections for now
+}
+
 interface ConfigValue {
     type: 'string' | 'number' | 'boolean' | 'enum' | 'select' | 'json';
     label: string;
@@ -34,7 +45,7 @@ interface SettingItemProps {
     fieldSchema: ConfigValue;
     value: any;
     onChange: (section: string, field: string, value: any) => void;
-    workingConfig?: any;
+    workingConfig?: AppSettings | null;
 }
 
 const SettingItem: React.FC<SettingItemProps> = (props: SettingItemProps) => {
@@ -209,7 +220,7 @@ export const SettingsApp: React.FC = () => {
         saving: false,
     });
 
-    const [workingConfig, setWorkingConfig] = React.useState<any>(null);
+    const [workingConfig, setWorkingConfig] = React.useState<AppSettings | null>(null);
     const [modelOptions, setModelOptions] = React.useState<string[]>([]);
 
     // Load initial data
@@ -268,36 +279,15 @@ export const SettingsApp: React.FC = () => {
     }, []);
 
     const handleFieldChange = (section: string, field: string, value: any) => {
-        setWorkingConfig((prev: any) => {
+        setWorkingConfig((prev: AppSettings | null) => {
             const updated = {
                 ...prev,
                 [section]: {
-                    ...prev[section],
+                    ...prev?.[section],
                     [field]: value,
                 },
             };
-
-            // Auto-update dependent fields when provider changes
-            if (section === 'provider' && field === 'service') {
-                console.info(`Provider changed to: ${value}, resetting model to default`);
-                
-                // Map providers to their default models
-                const defaultModels = {
-                    google: 'gemini-1.5-flash-latest',
-                    openai: 'gpt-4o',
-                    anthropic: 'claude-3-5-sonnet-20241022',
-                    ollama: 'llama3.2',
-                    custom: 'default'
-                };
-                
-                const defaultModel = defaultModels[value as keyof typeof defaultModels];
-                if (defaultModel) {
-                    updated.provider.model = defaultModel;
-                    console.info(`Auto-selected default model for ${value}: ${defaultModel}`);
-                }
-            }
-
-            return updated;
+            return updated as AppSettings;
         });
     };
 
@@ -359,7 +349,9 @@ export const SettingsApp: React.FC = () => {
         }, 800);
     };
 
-    const hasChanges = JSON.stringify(workingConfig) !== JSON.stringify(state.config);
+    const hasChanges = React.useMemo(() => {
+        return JSON.stringify(state.config) !== JSON.stringify(workingConfig);
+    }, [state.config, workingConfig]);
 
     // Define the section order and titles with our new semantic categories
     const getSectionGroups = (schema: ConfigSchema) => {
@@ -493,7 +485,9 @@ export const SettingsApp: React.FC = () => {
                             {key === 'integrations' ? (
                                 <MCPToolsSection 
                                     config={workingConfig} 
-                                    onUpdate={(updates: any) => setWorkingConfig(updates)}
+                                    onUpdate={(updates: Partial<AppSettings>) => 
+                                        setWorkingConfig((prevConfig: AppSettings) => ({ ...prevConfig, ...updates } as AppSettings))
+                                    }
                                 />
                             ) : (
                                 <div className="settings-items">

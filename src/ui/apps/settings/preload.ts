@@ -9,14 +9,14 @@ contextBridge.exposeInMainWorld('settingsAPI', {
     getModels: (provider: string) => ipcRenderer.invoke('settings:get-models', provider),
     openByokWidget: () => ipcRenderer.send('settings:open-byok-widget'),
     focus: () => ipcRenderer.send('settings:focus'),
+    focusByokWidget: () => ipcRenderer.send('settings:focus-byok-widget'),
     // MCP-related methods
     testMCPConnection: (serverConfig: any) => ipcRenderer.invoke('settings:test-mcp-connection', serverConfig),
     getMCPStatus: () => ipcRenderer.invoke('settings:get-mcp-status'),
     reloadMCP: () => ipcRenderer.invoke('settings:reload-mcp'),
-    updateMCPServer: (serverId: string, serverConfig: any) => ipcRenderer.invoke('settings:update-mcp-server', serverId, serverConfig),
-    addMCPServer: (serverConfig: any) => ipcRenderer.invoke('settings:add-mcp-server', serverConfig),
+    updateMCPServer: (serverId: string, config: any) => ipcRenderer.invoke('settings:update-mcp-server', serverId, config),
+    addMCPServer: (config: any) => ipcRenderer.invoke('settings:add-mcp-server', config),
     removeMCPServer: (serverId: string) => ipcRenderer.invoke('settings:remove-mcp-server', serverId),
-    toggleMCPServer: (serverId: string, enabled: boolean) => ipcRenderer.invoke('settings:toggle-mcp-server', serverId, enabled),
     // Real-time MCP event subscription
     subscribeMCPEvents: () => ipcRenderer.invoke('settings:subscribe-mcp-events'),
     onMCPStatusChange: (callback: (data: { serverId: string; status: any }) => void) => {
@@ -45,14 +45,14 @@ declare global {
             getModels: (provider: string) => Promise<{ success: boolean; models?: Array<{value: string; label: string}>; error?: string }>;
             openByokWidget: () => void;
             focus: () => void;
+            focusByokWidget: () => void;
             // MCP-related methods
             testMCPConnection: (serverConfig: any) => Promise<{ success: boolean; result?: any; error?: string }>;
             getMCPStatus: () => Promise<{ success: boolean; status?: any; error?: string }>;
             reloadMCP: () => Promise<{ success: boolean; error?: string }>;
-            updateMCPServer: (serverId: string, serverConfig: any) => Promise<{ success: boolean; error?: string }>;
-            addMCPServer: (serverConfig: any) => Promise<{ success: boolean; error?: string }>;
+            updateMCPServer: (serverId: string, config: any) => Promise<{ success: boolean; error?: string }>;
+            addMCPServer: (config: any) => Promise<{ success: boolean; error?: string }>;
             removeMCPServer: (serverId: string) => Promise<{ success: boolean; error?: string }>;
-            toggleMCPServer: (serverId: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
             // Real-time MCP event subscription
             subscribeMCPEvents: () => Promise<{ success: boolean; error?: string }>;
             onMCPStatusChange: (callback: (data: { serverId: string; status: any }) => void) => () => void;

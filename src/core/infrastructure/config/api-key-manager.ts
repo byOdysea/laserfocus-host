@@ -1,6 +1,7 @@
 // API Key Manager - Single Source of Truth
-// - Development: Environment variables sync to BYOK storage on startup 
-// - Production: Only BYOK storage
+// - Caches keys in memory for performance and to prevent race conditions.
+// - Development: Syncs environment variables to BYOK storage on startup.
+// - Production: Uses BYOK storage exclusively.
 
 import * as logger from '@utils/logger';
 import { safeStorage } from 'electron';
@@ -22,12 +23,13 @@ interface StoredApiKeys {
     google?: string;
     openai?: string;
     anthropic?: string;
-    updatedAt: string;
+    updatedAt?: string; // Optional because we don't store it in the in-memory cache
 }
 
 export class ApiKeyManager {
     private static instance: ApiKeyManager;
     private initialized = false;
+    private keys: Partial<StoredApiKeys> = {};
     private changeCallbacks: ((provider: string) => void)[] = [];
 
     static getInstance(): ApiKeyManager {
@@ -40,10 +42,11 @@ export class ApiKeyManager {
     async initialize(): Promise<void> {
         if (this.initialized) return;
 
+        ensureStorageDir();
+        await this._loadKeysFromFile();
+
         const isProduction = process.env.NODE_ENV === 'production';
-        
         if (!isProduction) {
-            // Development: Sync environment variables to BYOK storage
             await this.syncEnvironmentToStorage();
         }
         
@@ -51,120 +54,137 @@ export class ApiKeyManager {
         logger.info('[ApiKeyManager] Initialized with', isProduction ? 'production' : 'development', 'mode');
     }
 
+    private async _loadKeysFromFile(): Promise<void> {
+        try {
+            if (!fs.existsSync(API_KEY_STORAGE_FILE)) {
+                this.keys = {};
+                return;
+            }
+            
+            const data = fs.readFileSync(API_KEY_STORAGE_FILE, 'utf8');
+            const parsed = JSON.parse(data);
+            const loadedKeys: Partial<StoredApiKeys> = {};
+
+            const providers = ['google', 'openai', 'anthropic'];
+            for (const provider of providers) {
+                const key = `encrypted_${provider}`;
+                if (parsed[key] && safeStorage.isEncryptionAvailable()) {
+                    const decrypted = safeStorage.decryptString(Buffer.from(parsed[key], 'base64'));
+                    loadedKeys[provider as keyof StoredApiKeys] = decrypted;
+                } else if (parsed[provider]) {
+                    // Fallback for plain text keys
+                    loadedKeys[provider as keyof StoredApiKeys] = parsed[provider];
+                }
+            }
+            this.keys = loadedKeys;
+            logger.info('[ApiKeyManager] Loaded API keys from storage into memory.');
+        } catch (error) {
+            logger.error('[ApiKeyManager] Error loading API keys from file:', error);
+            this.keys = {}; // Start fresh on error
+        }
+    }
+
     private async syncEnvironmentToStorage(): Promise<void> {
         const envKeys: Partial<StoredApiKeys> = {};
-        let hasEnvKeys = false;
+        let needsSync = false;
         
-        // Check each environment variable - including undefined ones
         const envVars = [
             { key: 'GOOGLE_API_KEY', provider: 'google' as const },
             { key: 'OPENAI_API_KEY', provider: 'openai' as const },
             { key: 'ANTHROPIC_API_KEY', provider: 'anthropic' as const }
         ];
         
-        for (const envVar of envVars) {
-            if (envVar.key in process.env) {
-                const value = process.env[envVar.key];
-                if (value) {
-                    envKeys[envVar.provider] = value;
-                    hasEnvKeys = true;
-                    logger.info(`[ApiKeyManager] Found ${envVar.provider} API key in environment`);
-                } else {
-                    // Explicitly clear if environment variable is empty
-                    envKeys[envVar.provider] = '';
-                    logger.info(`[ApiKeyManager] Clearing ${envVar.provider} API key (empty environment variable)`);
+        for (const { key, provider } of envVars) {
+            if (key in process.env) {
+                const value = process.env[key] || ''; // Treat empty var as empty string
+                // Sync if the env key is different from the loaded key
+                if (this.keys[provider] !== value) {
+                    envKeys[provider] = value;
+                    needsSync = true;
+                    if (value) {
+                        logger.info(`[ApiKeyManager] Found different ${provider} API key in environment, queuing for sync.`);
+                    } else {
+                        logger.info(`[ApiKeyManager] Environment variable for ${provider} is empty, queuing for sync.`);
+                    }
                 }
             }
         }
 
-        // Always sync in development mode to ensure consistency
-        if (hasEnvKeys || Object.keys(envKeys).length > 0) {
-            await this.saveKeys(envKeys);
-            logger.info('[ApiKeyManager] Synced environment variables to BYOK storage');
+        if (needsSync) {
+            await this.saveKeys(envKeys, false); // Don't notify on initial sync
+            logger.info('[ApiKeyManager] Synced environment variables to BYOK storage.');
         } else {
-            logger.info('[ApiKeyManager] No environment variables found, keeping existing BYOK storage');
+            logger.info('[ApiKeyManager] No environment variable changes detected, skipping sync.');
         }
     }
 
     async getApiKey(provider: string): Promise<string | null> {
-        try {
-            ensureStorageDir();
-            
-            if (!fs.existsSync(API_KEY_STORAGE_FILE)) {
-                return null;
-            }
-            
-            const data = fs.readFileSync(API_KEY_STORAGE_FILE, 'utf8');
-            const parsed = JSON.parse(data);
-            
-            // Get encrypted keys
-            const encryptedKey = parsed[`encrypted_${provider}`];
-            if (encryptedKey && safeStorage.isEncryptionAvailable()) {
-                const decrypted = safeStorage.decryptString(Buffer.from(encryptedKey, 'base64'));
-                return decrypted;
-            }
-            
-            // Fallback to plain text (for development)
-            return parsed[provider] || null;
-        } catch (error) {
-            logger.error(`[ApiKeyManager] Error getting API key for ${provider}:`, error);
-            return null;
+        if (!this.initialized) {
+            // This should ideally not be hit if initialize is called on startup
+            await this.initialize();
         }
+        return (this.keys[provider as keyof StoredApiKeys] as string) || null;
     }
 
     async saveApiKey(provider: string, apiKey: string): Promise<void> {
-        const keys: Partial<StoredApiKeys> = {};
-        keys[provider as keyof StoredApiKeys] = apiKey;
-        await this.saveKeys(keys);
-        
-        // Notify listeners of API key change
-        this.changeCallbacks.forEach(callback => {
-            try {
-                callback(provider);
-            } catch (error) {
-                logger.error('[ApiKeyManager] Error in change callback:', error);
-            }
-        });
+        await this.saveKeys({ [provider]: apiKey });
     }
 
-    private async saveKeys(keys: Partial<StoredApiKeys>): Promise<void> {
-        try {
-            ensureStorageDir();
-            
-            // Load existing data
-            let data: any = { updatedAt: new Date().toISOString() };
-            if (fs.existsSync(API_KEY_STORAGE_FILE)) {
-                const existing = JSON.parse(fs.readFileSync(API_KEY_STORAGE_FILE, 'utf8'));
-                data = { ...existing, updatedAt: new Date().toISOString() };
-            }
-            
-            // Save each key
-            for (const [provider, apiKey] of Object.entries(keys)) {
-                if (provider === 'updatedAt') continue;
-                
+    private async saveKeys(keysToSave: Partial<StoredApiKeys>, notify = true): Promise<void> {
+        const providersChanged: string[] = [];
+
+        // 1. Update in-memory cache first and track changes
+        for (const [provider, apiKey] of Object.entries(keysToSave)) {
+            const p = provider as keyof StoredApiKeys;
+            if (this.keys[p] !== apiKey) {
                 if (apiKey) {
-                    // Use safeStorage if available
-                    if (safeStorage.isEncryptionAvailable()) {
-                        const encrypted = safeStorage.encryptString(apiKey);
-                        data[`encrypted_${provider}`] = encrypted.toString('base64');
-                        // Remove plain text version
-                        delete data[provider];
-                    } else {
-                        // Fallback to plain text (not recommended for production)
-                        data[provider] = apiKey;
-                        logger.warn(`[ApiKeyManager] Storing ${provider} API key in plain text - safeStorage not available`);
-                    }
+                    this.keys[p] = apiKey;
                 } else {
-                    // Remove the key if empty
-                    delete data[provider];
-                    delete data[`encrypted_${provider}`];
+                    delete this.keys[p];
+                }
+                providersChanged.push(p);
+            }
+        }
+
+        if (providersChanged.length === 0) {
+            logger.info('[ApiKeyManager] No key changes detected, skipping save.');
+            return;
+        }
+
+        // 2. Persist the entire current state of keys to disk
+        try {
+            const dataToStore: any = { updatedAt: new Date().toISOString() };
+            for (const [provider, apiKey] of Object.entries(this.keys)) {
+                if (!apiKey) continue;
+                
+                if (safeStorage.isEncryptionAvailable()) {
+                    const encrypted = safeStorage.encryptString(apiKey);
+                    dataToStore[`encrypted_${provider}`] = encrypted.toString('base64');
+                } else {
+                    dataToStore[provider] = apiKey;
+                    logger.warn(`[ApiKeyManager] Storing ${provider} API key in plain text - safeStorage not available.`);
                 }
             }
             
-            fs.writeFileSync(API_KEY_STORAGE_FILE, JSON.stringify(data, null, 2));
-            logger.info('[ApiKeyManager] API keys saved successfully');
+            fs.writeFileSync(API_KEY_STORAGE_FILE, JSON.stringify(dataToStore, null, 2));
+            logger.info(`[ApiKeyManager] API keys saved successfully for providers: ${providersChanged.join(', ')}`);
+
+            // 3. Notify listeners about the providers that actually changed
+            if (notify) {
+                providersChanged.forEach(p => {
+                    this.changeCallbacks.forEach(callback => {
+                        try {
+                            callback(p);
+                        } catch (error) {
+                            logger.error('[ApiKeyManager] Error in change callback:', error);
+                        }
+                    });
+                });
+            }
         } catch (error) {
             logger.error('[ApiKeyManager] Error saving API keys:', error);
+            // Consider rolling back in-memory change on failure
+            await this._loadKeysFromFile(); 
             throw error;
         }
     }
@@ -188,11 +208,12 @@ export class ApiKeyManager {
     }
 
     async getAllProviderStatuses(): Promise<Record<string, boolean>> {
+        if (!this.initialized) await this.initialize();
         const providers = ['google', 'openai', 'anthropic'];
         const statuses: Record<string, boolean> = {};
         
         for (const provider of providers) {
-            statuses[provider] = await this.hasApiKey(provider);
+            statuses[provider] = !!this.keys[provider as keyof StoredApiKeys];
         }
         
         return statuses;
@@ -201,6 +222,7 @@ export class ApiKeyManager {
     // Register callback for API key changes
     onChange(callback: (provider: string) => void): void {
         this.changeCallbacks.push(callback);
+        logger.debug(`[Config] Added change callback (${this.changeCallbacks.length} total subscribers)`);
     }
 
     // Remove callback
@@ -212,4 +234,4 @@ export class ApiKeyManager {
     }
 }
 
-export const apiKeyManager = ApiKeyManager.getInstance(); 
+export const apiKeyManager = ApiKeyManager.getInstance();

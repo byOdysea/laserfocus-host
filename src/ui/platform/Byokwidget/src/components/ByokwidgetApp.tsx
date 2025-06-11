@@ -276,10 +276,6 @@ export const ByokwidgetApp: React.FC = () => {
                         <div className={`status-dot ${getStatusClass()}`} />
                     </div>
                 </div>
-                {/* This specific status text in the header might be redundant now, 
-                    or could display a simplified version. For now, let's hide it if detailed one is below input.
-                    Alternatively, it could show the `state.provider` / `state.model` or a simpler status.
-                    Let's keep it for now but it will show the full statusText. */}
                 <div className={`status-text ${getStatusClass()}`}>{getStatusText()}</div>
             </div>
 
@@ -300,22 +296,6 @@ export const ByokwidgetApp: React.FC = () => {
                     >
                         {state.saving ? '...' : 'save'}
                     </button>
-                </div>
-                
-                {/* Always render help text container to reserve space */}
-                <div className="help-text" data-empty={!(state.provider === 'google' && !state.hasStoredApiKey)}>
-                    {state.provider === 'google' && !state.hasStoredApiKey ? (
-                        <>
-                            get a free api key from{' '}
-                            <a 
-                                href="https://makersuite.google.com/app/apikey" 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                            >
-                                google ai studio
-                            </a>
-                        </>
-                    ) : null}
                 </div>
             </div>
         </div>

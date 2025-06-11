@@ -13,7 +13,7 @@ const InputPillIpcHandlers: AppIpcModule = {
 
     registerMainProcessHandlers: (
         ipcMainInstance: IpcMain,
-        appInstance: InputPill, // Type assertion for clarity
+        appInstance: InputPill,
         allAppInstances?: AppMainProcessInstances
     ) => {
         logger.info(`[InputPill.ipc] Registering IPC handlers for ${InputPillIpcHandlers.moduleId}`);

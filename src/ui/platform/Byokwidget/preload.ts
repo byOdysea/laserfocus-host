@@ -48,7 +48,7 @@ contextBridge.exposeInMainWorld('byokwidgetAPI', {
     getApiKey: () => ipcRenderer.invoke('byokwidget:get-api-key'),
     
     // Save new API key
-    saveApiKey: (apiKey: string) => ipcRenderer.invoke('byokwidget:save-api-key'),
+    saveApiKey: (apiKey: string) => ipcRenderer.invoke('byokwidget:save-api-key', apiKey),
     
     // Get connection status (old method, to be removed from component)
     getStatus: () => ipcRenderer.invoke('byokwidget:get-status'),
@@ -72,17 +72,6 @@ ipcRenderer.on('config-changed', () => {
     // Dispatch a custom event to notify the React component
     window.dispatchEvent(new CustomEvent('config-updated'));
 });
-
-// Type definitions for the exposed API
-export interface ByokwidgetAPI {
-    getConfig: () => Promise<{ success: boolean; config?: any; error?: string }>;
-    getApiKey: () => Promise<{ success: boolean; hasApiKey?: boolean, apiKey?: string, error?: string }>;
-    saveApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>;
-    getStatus: () => Promise<{ success: boolean; status?: any, error?: string }>;
-    getAgentProviderStatus: () => Promise<AgentStatusInfo>;
-    onConfigChange: (callback: (newConfig: any) => void) => () => void;
-    focus: () => void;
-}
 
 declare global {
     interface Window {
