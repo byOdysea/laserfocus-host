@@ -13,7 +13,7 @@
     "create-app": "tsx src/core/app-discovery/app-generator.ts"
   },
   "repository": "https://github.com/byOdysea/laserfocus.git",
-  "author": "Andres Antillon <axantillon@gmail.com>ail.com>",
+  "author": "Andres Antillon <axantillon@gmail.com>",
   "license": "MIT",
   "productName": "Laserfocus",
   "devDependencies": {
