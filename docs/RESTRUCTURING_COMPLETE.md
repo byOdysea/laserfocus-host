@@ -17,7 +17,8 @@ src/core/
 ├── canvas/                          # Canvas management domain
 │   ├── canvas-engine.ts             # Pure canvas operations
 │   └── adapters/
-│       └── desktop-canvas-adapter.ts # Desktop-specific implementation
+│       └── desktop/
+│           └── desktop-canvas-adapter.ts # Desktop-specific implementation
 │
 ├── integrations/                    # External service integrations
 │   ├── llm/                         # LLM providers

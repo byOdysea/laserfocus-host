@@ -55,7 +55,7 @@ Successfully implemented comprehensive UI system enhancements to solve conversat
 ### 5. Canvas Engine App/Widget Prefix Support
 **Added `app:` and `widget:` prefix handling**
 
-#### Desktop Canvas Adapter (`src/core/engine/adapters/desktop-canvas-adapter.ts`)
+#### Desktop Canvas Adapter (`src/core/canvas/adapters/desktop/desktop-canvas-adapter.ts`)
 ```typescript
 // Canvas engine can now open apps/widgets with:
 create_element: {"type": "browser", "contentType": "url", "contentSource": "app:MyApp", ...}

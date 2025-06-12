@@ -76,7 +76,7 @@ All legacy support and version mentions have been successfully removed from the 
 ### **Files Updated**
 1. `src/core/main-process/agent-bridge.ts` 
 2. `src/core/agents/athena-agent.ts`
-3. `src/core/engine/adapters/desktop-canvas-adapter.ts`
+3. `src/core/canvas/adapters/desktop/desktop-canvas-adapter.ts`
 4. `src/core/agents/prompts/layout-calculations.ts`
 
 ### **Import Changes**
@@ -110,7 +110,8 @@ src/
 │   ├── engine/
 │   │   ├── canvas-engine.ts       # Clean engine
 │   │   └── adapters/
-│   │       └── desktop-canvas-adapter.ts
+│   │       └── desktop/
+│   │           └── desktop-canvas-adapter.ts
 │   └── config/
 ├── lib/
 │   └── types/
