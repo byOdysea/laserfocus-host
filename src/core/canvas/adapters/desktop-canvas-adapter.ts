@@ -725,7 +725,7 @@ export class DesktopCanvasAdapter implements CanvasAdapter {
         path?: string;
         params: Map<string, string>;
     } {
-        const match = uri.match(/^(apps|widgets|platform):(\/\/)?([a-zA-Z0-9_-]+)(\/([a-zA-Z0-9_/-]*))?(\?(.*))?$/);
+        const match = uri.match(/^(apps|widgets|platform):(\/\/)?([a-zA-Z0-9_-]+)(\/([a-zA-Z0-9_.\/-]*))?(\?(.*))?$/);
         if (!match) {
             throw new Error(`Invalid UI component URI: ${uri}`);
         }
