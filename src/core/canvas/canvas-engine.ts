@@ -17,7 +17,7 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import logger from '@utils/logger';
 import { z } from 'zod';
 import { normalizeUrl } from '../agent/prompts/layout-calculations';
-import { DesktopCanvasAdapter } from './adapters/desktop-canvas-adapter';
+import { DesktopCanvasAdapter } from './adapters/desktop/desktop-canvas-adapter';
 
 export class CanvasEngine {
     private adapter: CanvasAdapter;
