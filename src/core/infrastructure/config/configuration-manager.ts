@@ -139,6 +139,96 @@ export class ConfigurationManager {
   private migrationSaveTimeout: NodeJS.Timeout | null = null;
 
   /**
+   * Normalize simplified MCP configuration to the full schema expected by the app.
+   */
+  private normalizeMcpConfig(config: any): any {
+    if (!config || typeof config !== 'object') {
+      return { enabled: false, servers: [] };
+    }
+
+    const normalized: any = { enabled: config.enabled ?? false, servers: [] };
+    let servers: any[] = [];
+    if (Array.isArray(config.servers)) {
+      servers = config.servers;
+    } else if (config.mcpServers && typeof config.mcpServers === 'object') {
+      servers = Object.entries(config.mcpServers).map(([name, cfg]) => ({ name, ...cfg }));
+    }
+
+    for (const server of servers) {
+      if (server && typeof server === 'object') {
+        if (server.enabled === undefined) {
+          server.enabled = false;
+        }
+        if (server.stdio || server.sse || server.http || server.streamableHttp) {
+          normalized.servers.push(server);
+          continue;
+        }
+
+        const s: any = { ...server };
+        if (
+          s.command ||
+          s.args ||
+          s.env ||
+          s.executor ||
+          s.cwd ||
+          s.dockerImage ||
+          s.dockerArgs ||
+          s.dockerEnv
+        ) {
+          s.transport = s.transport || 'stdio';
+          s.stdio = {
+            command: s.command,
+            args: s.args || [],
+            env: s.env,
+            executor: s.executor || 'direct',
+            dockerImage: s.dockerImage,
+            dockerArgs: s.dockerArgs,
+            dockerEnv: s.dockerEnv,
+            cwd: s.cwd
+          };
+        }
+
+        if (s.url) {
+          const t = s.transport || 'streamableHttp';
+          s.transport = t;
+          if (t === 'sse') {
+            s.sse = { url: s.url, headers: s.headers };
+          } else if (t === 'http') {
+            s.http = { url: s.url, headers: s.headers, method: s.method || 'POST' };
+          } else {
+            s.streamableHttp = {
+              url: s.url,
+              headers: s.headers,
+              auth: s.auth,
+              enableBatching: 'enableBatching' in s ? s.enableBatching : true,
+              batchSize: s.batchSize || 10
+            };
+          }
+        }
+
+        delete s.command;
+        delete s.args;
+        delete s.env;
+        delete s.executor;
+        delete s.cwd;
+        delete s.dockerImage;
+        delete s.dockerArgs;
+        delete s.dockerEnv;
+        delete s.url;
+        delete s.headers;
+        delete s.method;
+        delete s.auth;
+        delete s.enableBatching;
+        delete s.batchSize;
+
+        normalized.servers.push(s);
+      }
+    }
+
+    return normalized;
+  }
+
+  /**
    * Load default MCP configuration (bundled with app) or user's custom mcp.json
    */
   private loadMCPConfigFromFile() {
@@ -150,16 +240,16 @@ export class ConfigurationManager {
           try {
             const mcpData = fs.readFileSync(devMcpPath, 'utf8');
             logger.info(`[Config] Using development mcp.json from: ${devMcpPath}`);
-            return JSON.parse(mcpData);
+            return this.normalizeMcpConfig(JSON.parse(mcpData));
           } catch (error) {
             logger.warn(`[Config] Development mcp.json is corrupted, falling back to imported default:`, error);
             // Fallback to imported default if dev file is broken
-            return defaultMcpConfig;
+            return this.normalizeMcpConfig(defaultMcpConfig);
           }
         } else {
           // If no mcp.json in dev, use the imported one.
           logger.info(`[Config] Using imported default MCP configuration (dev mode)`);
-          return defaultMcpConfig;
+          return this.normalizeMcpConfig(defaultMcpConfig);
         }
       } else {
         // Production: Always use the user's config file.
@@ -175,12 +265,12 @@ export class ConfigurationManager {
         try {
           const mcpData = fs.readFileSync(userMcpPath, 'utf8');
           logger.info(`[Config] Loaded MCP configuration from: ${userMcpPath}`);
-          return JSON.parse(mcpData);
+          return this.normalizeMcpConfig(JSON.parse(mcpData));
         } catch (error) {
           logger.error(`[Config] User's mcp.json is corrupted. Recreating with defaults:`, error);
           // If file is corrupted, recreate it and return the defaults for this session.
           this.copyDefaultMcpToUserConfig(defaultMcpConfig, userMcpPath);
-          return defaultMcpConfig;
+          return this.normalizeMcpConfig(defaultMcpConfig);
         }
       }
     } catch (error) {

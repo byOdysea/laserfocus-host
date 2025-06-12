@@ -1,52 +1,14 @@
 {
-  "enabled": true,
-  "servers": [
-    {
-      "name": "filesystem",
-      "description": "Local file system access",
-      "enabled": false,
-      "stdio": {
-        "executor": "npx",
-        "command": "@modelcontextprotocol/server-filesystem",
-        "args": ["./"]
-      }
-    },
-    {
-      "name": "memory",
-      "description": "Persistent memory and knowledge management",
-      "enabled": false,
-      "stdio": {
-        "executor": "npx",
-        "command": "@modelcontextprotocol/server-memory"
-      }
-    },
-    {
-      "name": "brave-search",
-      "description": "Web search via Brave Search API",
-      "enabled": false,
-      "stdio": {
-        "executor": "uvx",
-        "command": "mcp-server-brave-search",
-        "env": {
-          "BRAVE_API_KEY": "${BRAVE_API_KEY}"
-        }
-      }
-    },
-    {
-      "name": "postgres",
-      "description": "PostgreSQL database access",
-      "enabled": false,
-      "stdio": {
-        "executor": "uvx",
-        "command": "mcp-server-postgres",
-        "args": ["postgresql://localhost:5432/mydb"],
-        "env": {
-          "PGPASSWORD": "${DB_PASSWORD}"
-        }
-      },
-      "toolFilters": {
-        "blockedTools": ["execute_write", "drop_table", "truncate"]
+  "mcpServers": {
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "env": {
+        "MEMORY_FILE_PATH": "/path/to/custom/memory.json"
       }
     }
-  ]
-} 
+  }
+}
