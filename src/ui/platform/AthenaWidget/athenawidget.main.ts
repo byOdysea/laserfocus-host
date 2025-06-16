@@ -1,13 +1,11 @@
 // src/ui/athena-widget.ts
 import { getWindowRegistry } from '@/core/platform/windows/window-registry';
 import * as logger from '@utils/logger';
-import { BrowserWindow, Display } from 'electron';
+import { Display } from 'electron';
 import { BaseAppWindow } from '@lib/base-app-window';
 
 
 export class AthenaWidgetWindow extends BaseAppWindow {
-    public window: BrowserWindow;
-
     constructor(primaryDisplay: Display, viteDevServerUrl: string | undefined, preloadPath: string) {
         const x = primaryDisplay.workArea.x + primaryDisplay.workAreaSize.width - 350 - 20;
         const y = primaryDisplay.workArea.y + 20;
@@ -62,7 +60,7 @@ export class AthenaWidgetWindow extends BaseAppWindow {
     }
 
     show(): void {
-        if (this.window && !this.window.isDestroyed()) {
+        if (!this.window.isDestroyed()) {
             super.focus();
         }
     }
