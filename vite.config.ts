@@ -5,13 +5,13 @@ import electron from 'vite-plugin-electron';
 import renderer from 'vite-plugin-electron-renderer';
 import {
     createUIDiscoveryPlugin,
-    discoverAppsFromFileSystem,
+    discoverUIComponentsFromFileSystem,
     generateViteElectronEntries,
     generateViteInputs
 } from './src/core/infrastructure/build/vite-app-discovery';
 
 // Discover UI components automatically
-const discoveredUIComponents = discoverAppsFromFileSystem('src/ui');
+const discoveredUIComponents = discoverUIComponentsFromFileSystem('src/ui');
 const electronEntries = generateViteElectronEntries(discoveredUIComponents);
 const rollupInputs = generateViteInputs(discoveredUIComponents);
 

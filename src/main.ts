@@ -85,17 +85,12 @@ const initializeApp = async (): Promise<void> => {
     setUIDiscoveryService(uiDiscoveryService);
 
     // Discover and initialize all UI components automatically
-    const { appInstances, appModules } = await uiDiscoveryService.discoverAndInitializeUIComponents();
+    await uiDiscoveryService.discoverAndInitializeUIComponents();
 
-    // Register modular IPC handlers that were being ignored
-    appModules.forEach(module => {
-        const instance = appInstances.get(module.moduleId);
-        if (instance) {
-            module.registerMainProcessHandlers(ipcMain, instance, appInstances);
-            logger.info(`[initializeApp] Registered IPC handlers for ${module.moduleId}`);
-        }
-    });
-
+    // Log which platform components were initialized on startup
+    const platformComponents = uiDiscoveryService.getPlatformComponents();
+    logger.info(`[initializeApp] Platform components initialized for startup: ${platformComponents.join(', ')}`);
+    
     // Agent Bridge automatically sets up IPC handlers - no need for manual bridge init
     logger.info(`[initializeApp] Agent Bridge is ready and IPC handlers are active`);
     
@@ -112,13 +107,13 @@ const initializeApp = async (): Promise<void> => {
             logger.info('[initializeApp] Hot-reloading app registry...');
             await uiDiscoveryService.reloadRegistry();
             
-            const stats = uiDiscoveryService.getAllApps();
-            logger.info(`[initializeApp] Registry hot-reload complete: ${stats.length} apps available`);
+            const stats = uiDiscoveryService.getAllUIComponents();
+            logger.info(`[initializeApp] Registry hot-reload complete: ${stats.length} UI components available`);
             
             return { 
                 success: true, 
-                appsCount: stats.length,
-                availableApps: stats
+                uiComponentsCount: stats.length,
+                availableUIComponents: stats
             };
         } catch (error) {
             logger.error('[initializeApp] Registry hot-reload failed:', error);

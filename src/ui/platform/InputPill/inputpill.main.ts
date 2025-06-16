@@ -95,10 +95,12 @@ export class InputPill extends BaseAppWindow {
             logger.info('[InputPill.main] Showing window.');
             super.focus();
             this.window.webContents.executeJavaScript(`
-                const input = document.getElementById('query-input');
-                if (input) {
-                    input.focus();
-                }
+                (() => {
+                    const input = document.getElementById('query-input');
+                    if (input) {
+                        input.focus();
+                    }
+                })();
             `);
         }
     }
