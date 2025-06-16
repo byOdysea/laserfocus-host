@@ -1,8 +1,8 @@
 import type { CanvasElement, CreateElementParams } from '@/lib/types/canvas';
-import { BrowserWindow } from 'electron';
+import { ConfigurationManager } from '@core/infrastructure/config/configuration-manager';
+import { getUIDiscoveryService } from '@core/platform/discovery/main-process-discovery';
 import { createLogger } from '@utils/logger';
-import { ConfigurationManager } from '../infrastructure/config/configuration-manager';
-import { getUIDiscoveryService } from '../platform/discovery/main-process-discovery';
+import { BrowserWindow } from 'electron';
 
 const logger = createLogger('[DesktopWindow]');
 
