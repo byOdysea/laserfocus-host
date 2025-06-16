@@ -6,40 +6,31 @@ const logger = createLogger('[ComponentRegistry]');
 
 export async function loadUIRegistry(): Promise<UIComponentRegistry | null> {
     try {
-        const registryModule = await import('./app-registry');
-        return registryModule.createAppRegistry();
+        const registryModule = await import('./ui-component-registry');
+        return registryModule.createUIComponentRegistry();
     } catch (error) {
-        logger.warn('Could not load UI component registry:', error);
+        logger.warn('Could not load UI component registry, will fall back to dynamic discovery:', error);
         return null;
     }
 }
 
-export function classifyAppType(appName: string): 'platform' | 'app' | 'widget' {
+export async function classifyAppType(appName: string): Promise<'platform' | 'app' | 'widget'> {
     try {
-        const registryModule = require('./app-registry');
-        return registryModule.getAppType(appName);
-    } catch {
-        const platformUIComponents = ['AthenaWidget', 'Byokwidget', 'InputPill'];
-        return platformUIComponents.includes(appName) ? 'platform' : 'app';
+        const registryModule = await import('./ui-component-registry');
+        return registryModule.getUIComponentType(appName);
+    } catch (error) {
+        logger.error(`Failed to classify app type for ${appName}:`, error);
+        throw new Error('UI component registry is required but failed to load. This indicates a build-time issue.');
     }
 }
 
-export function getAppPath(appName: string): string {
+export async function getAppPath(appName: string): Promise<string> {
     try {
-        const registryModule = require('./app-registry');
-        return registryModule.getAppPath(appName);
-    } catch {
-        const knownAppPaths: Record<string, string> = {
-            'AthenaWidget': 'platform/AthenaWidget',
-            'Byokwidget': 'platform/Byokwidget',
-            'InputPill': 'platform/InputPill',
-            'Notes': 'apps/notes',
-            'Reminders': 'apps/reminders',
-            'Settings': 'apps/settings'
-        };
-        if (knownAppPaths[appName]) return knownAppPaths[appName];
-        const basePath = classifyAppType(appName) === 'platform' ? 'platform' : 'apps';
-        return `${basePath}/${appName}`;
+        const registryModule = await import('./ui-component-registry');
+        return registryModule.getUIComponentPath(appName);
+    } catch (error) {
+        logger.error(`Failed to get app path for ${appName}:`, error);
+        throw new Error('UI component registry is required but failed to load. This indicates a build-time issue.');
     }
 }
 

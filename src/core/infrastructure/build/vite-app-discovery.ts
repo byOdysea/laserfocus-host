@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Plugin } from 'vite';
 
-interface DiscoveredApp {
+interface DiscoveredUIComponent {
     name: string;
     type: 'platform' | 'app' | 'widget';
     fullPath: string;
@@ -12,68 +12,68 @@ interface DiscoveredApp {
 }
 
 /**
- * Discovers apps from the file system and generates the registry
+ * Discovers UI components from the file system and generates the registry
  */
-export function discoverAppsFromFileSystem(uiDir: string): DiscoveredApp[] {
-    const apps: DiscoveredApp[] = [];
+export function discoverUIComponentsFromFileSystem(uiDir: string): DiscoveredUIComponent[] {
+    const components: DiscoveredUIComponent[] = [];
     
     // Check platform directory
     const platformDir = path.join(uiDir, 'platform');
     if (fs.existsSync(platformDir)) {
-        const platformApps = fs.readdirSync(platformDir, { withFileTypes: true })
+        const platformComponents = fs.readdirSync(platformDir, { withFileTypes: true })
             .filter(dirent => dirent.isDirectory())
             .map(dirent => dirent.name);
         
-        for (const appName of platformApps) {
-            const appPath = path.join(platformDir, appName);
-            const app = createAppInfo(appName, 'platform', `platform/${appName}`, appPath);
-            if (app) apps.push(app);
+        for (const componentName of platformComponents) {
+            const componentPath = path.join(platformDir, componentName);
+            const component = createUIComponentInfo(componentName, 'platform', `platform/${componentName}`, componentPath);
+            if (component) components.push(component);
         }
     }
     
     // Check apps directory
     const appsDir = path.join(uiDir, 'apps');
     if (fs.existsSync(appsDir)) {
-        const applicationApps = fs.readdirSync(appsDir, { withFileTypes: true })
+        const appComponents = fs.readdirSync(appsDir, { withFileTypes: true })
             .filter(dirent => dirent.isDirectory())
             .map(dirent => dirent.name);
         
-        for (const appName of applicationApps) {
-            const appPath = path.join(appsDir, appName);
-            const app = createAppInfo(appName, 'app', `apps/${appName}`, appPath);
-            if (app) apps.push(app);
+        for (const componentName of appComponents) {
+            const componentPath = path.join(appsDir, componentName);
+            const component = createUIComponentInfo(componentName, 'app', `apps/${componentName}`, componentPath);
+            if (component) components.push(component);
         }
     }
     
     // Check widgets directory
     const widgetsDir = path.join(uiDir, 'widgets');
     if (fs.existsSync(widgetsDir)) {
-        const widgetApps = fs.readdirSync(widgetsDir, { withFileTypes: true })
+        const widgetComponents = fs.readdirSync(widgetsDir, { withFileTypes: true })
             .filter(dirent => dirent.isDirectory())
             .map(dirent => dirent.name);
         
-        for (const appName of widgetApps) {
-            const appPath = path.join(widgetsDir, appName);
-            const app = createAppInfo(appName, 'widget', `widgets/${appName}`, appPath);
-            if (app) apps.push(app);
+        for (const componentName of widgetComponents) {
+            const componentPath = path.join(widgetsDir, componentName);
+            const component = createUIComponentInfo(componentName, 'widget', `widgets/${componentName}`, componentPath);
+            if (component) components.push(component);
         }
     }
     
-    return apps;
+    return components;
 }
 
-function createAppInfo(
+function createUIComponentInfo(
     name: string, 
     type: 'platform' | 'app' | 'widget', 
     fullPath: string, 
-    appPath: string
-): DiscoveredApp | null {
-    const mainFile = findMainFile(appPath, name);
-    const ipcFile = findIpcFile(appPath, name);
-    const preloadFile = findPreloadFile(appPath);
+    componentPath: string
+): DiscoveredUIComponent | null {
+    const mainFile = findMainFile(componentPath, name);
+    const ipcFile = findIpcFile(componentPath, name);
+    const preloadFile = findPreloadFile(componentPath);
     
     if (!mainFile && !ipcFile) {
-        return null; // App must have at least one of these
+        return null; // Component must have at least one of these
     }
     
     return {
@@ -86,16 +86,16 @@ function createAppInfo(
     };
 }
 
-function findMainFile(appPath: string, appName: string): string | undefined {
+function findMainFile(componentPath: string, componentName: string): string | undefined {
     const possibleNames = [
-        `${appName.toLowerCase()}.main.ts`,
-        `${appName.toLowerCase()}.main.js`,
+        `${componentName.toLowerCase()}.main.ts`,
+        `${componentName.toLowerCase()}.main.js`,
         `main.ts`,
         `main.js`
     ];
     
     for (const fileName of possibleNames) {
-        const filePath = path.join(appPath, fileName);
+        const filePath = path.join(componentPath, fileName);
         if (fs.existsSync(filePath)) {
             return fileName;
         }
@@ -104,16 +104,16 @@ function findMainFile(appPath: string, appName: string): string | undefined {
     return undefined;
 }
 
-function findIpcFile(appPath: string, appName: string): string | undefined {
+function findIpcFile(componentPath: string, componentName: string): string | undefined {
     const possibleNames = [
-        `${appName.toLowerCase()}.ipc.ts`,
-        `${appName.toLowerCase()}.ipc.js`,
+        `${componentName.toLowerCase()}.ipc.ts`,
+        `${componentName.toLowerCase()}.ipc.js`,
         `ipc.ts`,
         `ipc.js`
     ];
     
     for (const fileName of possibleNames) {
-        const filePath = path.join(appPath, fileName);
+        const filePath = path.join(componentPath, fileName);
         if (fs.existsSync(filePath)) {
             return fileName;
         }
@@ -122,11 +122,11 @@ function findIpcFile(appPath: string, appName: string): string | undefined {
     return undefined;
 }
 
-function findPreloadFile(appPath: string): string | undefined {
+function findPreloadFile(componentPath: string): string | undefined {
     const possibleNames = ['preload.ts', 'preload.js'];
     
     for (const fileName of possibleNames) {
-        const filePath = path.join(appPath, fileName);
+        const filePath = path.join(componentPath, fileName);
         if (fs.existsSync(filePath)) {
             return fileName;
         }
@@ -152,16 +152,16 @@ function toPascalCase(str: string): string {
 }
 
 /**
- * Generates the app registry file
+ * Generates the UI component registry file
  */
-export function generateAppRegistry(apps: DiscoveredApp[], outputPath: string): void {
+export function generateUIComponentRegistry(components: DiscoveredUIComponent[], outputPath: string): void {
     const imports: string[] = [];
     const mainClassEntries: string[] = [];
     const ipcModuleEntries: string[] = [];
-    const appNames: string[] = [];
+    const componentNames: string[] = [];
     
-    apps.forEach(app => {
-        const { name, fullPath, mainFile, ipcFile } = app;
+    components.forEach(component => {
+        const { name, fullPath, mainFile, ipcFile } = component;
         const safeName = toPascalCase(name); // Convert to valid JS identifier
         
         if (mainFile) {
@@ -187,7 +187,7 @@ export function generateAppRegistry(apps: DiscoveredApp[], outputPath: string): 
     }`);
         }
         
-        appNames.push(`'${safeName}'`);
+        componentNames.push(`'${safeName}'`);
     });
     
     const registryContent = `// Auto-generated file - do not edit manually
@@ -195,13 +195,13 @@ export function generateAppRegistry(apps: DiscoveredApp[], outputPath: string): 
 
 ${imports.join('\n')}
 
-export interface AppRegistry {
+export interface UIComponentRegistry {
     mainClasses: Map<string, any>;
     ipcModules: Map<string, any>;
 }
 
-export function createAppRegistry(): AppRegistry {
-    const registry: AppRegistry = {
+export function createUIComponentRegistry(): UIComponentRegistry {
+    const registry: UIComponentRegistry = {
         mainClasses: new Map(),
         ipcModules: new Map(),
     };
@@ -212,61 +212,61 @@ ${ipcModuleEntries.join('\n')}
     return registry;
 }
 
-export function getDiscoveredApps(): string[] {
-    return [${appNames.join(', ')}];
+export function getDiscoveredUIComponents(): string[] {
+    return [${componentNames.join(', ')}];
 }
 
-export function getAppType(appName: string): 'platform' | 'app' | 'widget' {
-    const platformUIComponents = [${apps.filter(a => a.type === 'platform').map(a => `'${toPascalCase(a.name)}'`).join(', ')}];
-    const widgets: string[] = [${apps.filter(a => a.type === 'widget').map(a => `'${toPascalCase(a.name)}'`).join(', ')}];
+export function getUIComponentType(componentName: string): 'platform' | 'app' | 'widget' {
+    const platformUIComponents = [${components.filter(c => c.type === 'platform').map(c => `'${toPascalCase(c.name)}'`).join(', ')}];
+    const widgets: string[] = [${components.filter(c => c.type === 'widget').map(c => `'${toPascalCase(c.name)}'`).join(', ')}];
     
-    if (platformUIComponents.includes(appName)) return 'platform';
-    if (widgets.includes(appName)) return 'widget';
+    if (platformUIComponents.includes(componentName)) return 'platform';
+    if (widgets.includes(componentName)) return 'widget';
     return 'app';
 }
 
-export function getAppPath(appName: string): string {
-    const appPaths: Record<string, string> = {
-${apps.map(app => `        '${toPascalCase(app.name)}': '${app.fullPath}'`).join(',\n')}
+export function getUIComponentPath(componentName: string): string {
+    const componentPaths: Record<string, string> = {
+${components.map(component => `        '${toPascalCase(component.name)}': '${component.fullPath}'`).join(',\n')}
     };
-    return appPaths[appName] || \`apps/\${appName}\`;
+    return componentPaths[componentName] || \`apps/\${componentName}\`;
 }
 `;
     
     fs.writeFileSync(outputPath, registryContent);
     // CLI feedback - console.log is appropriate for build-time tools
-    console.log(`✅ Generated app registry with ${apps.length} apps`);
+    console.log(`✅ Generated UI component registry with ${components.length} components`);
 }
 
 /**
  * Main function to discover and generate registry
  */
-export function generateAppRegistryFromFileSystem(uiDir: string, outputPath: string): void {
-    const apps = discoverAppsFromFileSystem(uiDir);
-    generateAppRegistry(apps, outputPath);
+export function generateUIComponentRegistryFromFileSystem(uiDir: string, outputPath: string): void {
+    const components = discoverUIComponentsFromFileSystem(uiDir);
+    generateUIComponentRegistry(components, outputPath);
 }
 
 // CLI usage
 if (require.main === module) {
     const uiDir = path.join(process.cwd(), 'src/ui');
-    const outputPath = path.join(process.cwd(), 'src/core/platform/discovery/app-registry.ts');
+    const outputPath = path.join(process.cwd(), 'src/core/platform/discovery/ui-component-registry.ts');
     
-    generateAppRegistryFromFileSystem(uiDir, outputPath);
+    generateUIComponentRegistryFromFileSystem(uiDir, outputPath);
 }
 
-export function generateViteElectronEntries(apps: DiscoveredApp[]) {
+export function generateViteElectronEntries(components: DiscoveredUIComponent[]) {
     const entries = [];
     
-    for (const app of apps) {
-        if (app.preloadFile) {
+    for (const component of components) {
+        if (component.preloadFile) {
             entries.push({
-                entry: `src/ui/${app.fullPath}/${app.preloadFile}`,
+                entry: `src/ui/${component.fullPath}/${component.preloadFile}`,
                 onstart(options: any) {
                     options.reload();
                 },
                 vite: {
                     build: {
-                        outDir: `dist/ui/${app.fullPath}`,
+                        outDir: `dist/ui/${component.fullPath}`,
                     },
                 },
             });
@@ -276,14 +276,14 @@ export function generateViteElectronEntries(apps: DiscoveredApp[]) {
     return entries;
 }
 
-export function generateViteInputs(apps: DiscoveredApp[]): Record<string, string> {
+export function generateViteInputs(components: DiscoveredUIComponent[]): Record<string, string> {
     const inputs: Record<string, string> = {};
     
-    for (const app of apps) {
-        if (app.preloadFile) {
+    for (const component of components) {
+        if (component.preloadFile) {
             // Convert CamelCase to camelCase for input keys
-            const inputKey = app.name.charAt(0).toLowerCase() + app.name.slice(1);
-            inputs[inputKey] = path.resolve(process.cwd(), `src/ui/${app.fullPath}/${app.preloadFile}`);
+            const inputKey = component.name.charAt(0).toLowerCase() + component.name.slice(1);
+            inputs[inputKey] = path.resolve(process.cwd(), `src/ui/${component.fullPath}/${component.preloadFile}`);
         }
     }
     
@@ -294,10 +294,10 @@ export function createUIDiscoveryPlugin(): Plugin {
     return {
         name: 'ui-discovery',
         configResolved() {
-            const uiComponents = discoverAppsFromFileSystem('src/ui');
-            generateAppRegistry(uiComponents, path.join(process.cwd(), 'src/core/platform/discovery/app-registry.ts'));
+            const uiComponents = discoverUIComponentsFromFileSystem('src/ui');
+            generateUIComponentRegistry(uiComponents, path.join(process.cwd(), 'src/core/platform/discovery/ui-component-registry.ts'));
             // Vite plugin feedback - console.log is appropriate for build-time tools
-            console.log(`[UI Discovery] Discovered ${uiComponents.length} UI components:`, uiComponents.map(a => a.name).join(', '));
+            console.log(`[UI Discovery] Discovered ${uiComponents.length} UI components:`, uiComponents.map(c => c.name).join(', '));
         },
     };
 } 

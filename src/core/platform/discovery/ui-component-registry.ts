@@ -14,13 +14,13 @@ import * as RemindersIpc from '@ui/apps/reminders/reminders.ipc';
 import * as SettingsMain from '@ui/apps/settings/settings.main';
 import * as SettingsIpc from '@ui/apps/settings/settings.ipc';
 
-export interface AppRegistry {
+export interface UIComponentRegistry {
     mainClasses: Map<string, any>;
     ipcModules: Map<string, any>;
 }
 
-export function createAppRegistry(): AppRegistry {
-    const registry: AppRegistry = {
+export function createUIComponentRegistry(): UIComponentRegistry {
+    const registry: UIComponentRegistry = {
         mainClasses: new Map(),
         ipcModules: new Map(),
     };
@@ -95,21 +95,21 @@ export function createAppRegistry(): AppRegistry {
     return registry;
 }
 
-export function getDiscoveredApps(): string[] {
+export function getDiscoveredUIComponents(): string[] {
     return ['AthenaWidget', 'Byokwidget', 'InputPill', 'Notes', 'Reminders', 'Settings'];
 }
 
-export function getAppType(appName: string): 'platform' | 'app' | 'widget' {
+export function getUIComponentType(componentName: string): 'platform' | 'app' | 'widget' {
     const platformUIComponents = ['AthenaWidget', 'Byokwidget', 'InputPill'];
     const widgets: string[] = [];
     
-    if (platformUIComponents.includes(appName)) return 'platform';
-    if (widgets.includes(appName)) return 'widget';
+    if (platformUIComponents.includes(componentName)) return 'platform';
+    if (widgets.includes(componentName)) return 'widget';
     return 'app';
 }
 
-export function getAppPath(appName: string): string {
-    const appPaths: Record<string, string> = {
+export function getUIComponentPath(componentName: string): string {
+    const componentPaths: Record<string, string> = {
         'AthenaWidget': 'platform/AthenaWidget',
         'Byokwidget': 'platform/Byokwidget',
         'InputPill': 'platform/InputPill',
@@ -117,5 +117,5 @@ export function getAppPath(appName: string): string {
         'Reminders': 'apps/reminders',
         'Settings': 'apps/settings'
     };
-    return appPaths[appName] || `apps/${appName}`;
+    return componentPaths[componentName] || `apps/${componentName}`;
 }
