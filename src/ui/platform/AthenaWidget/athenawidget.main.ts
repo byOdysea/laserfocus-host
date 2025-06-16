@@ -2,7 +2,7 @@
 import { getWindowRegistry } from '@/core/platform/windows/window-registry';
 import * as logger from '@utils/logger';
 import { BrowserWindow, Display } from 'electron';
-import { BaseAppWindow } from '@ui/common/base-app-window';
+import { BaseAppWindow } from '@lib/base-app-window';
 
 
 export class AthenaWidgetWindow extends BaseAppWindow {
