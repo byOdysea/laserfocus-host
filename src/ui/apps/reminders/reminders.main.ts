@@ -1,10 +1,8 @@
-import { BrowserWindow, Display } from 'electron';
+import { Display } from 'electron';
 import * as logger from '@utils/logger';
 import { BaseAppWindow } from '@lib/base-app-window';
 
 export class RemindersWindow extends BaseAppWindow {
-    public window: BrowserWindow;
-
     constructor(primaryDisplay: Display, viteDevServerUrl: string | undefined, preloadPath: string) {
         super(
             { width: 800, height: 600 },
