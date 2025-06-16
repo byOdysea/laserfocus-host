@@ -2,7 +2,7 @@
 import { getWindowRegistry } from '@/core/platform/windows/window-registry';
 import * as logger from '@utils/logger';
 import { BrowserWindow, Display, ipcMain } from 'electron';
-import { BaseAppWindow } from '@ui/common/base-app-window';
+import { BaseAppWindow } from '@lib/base-app-window';
 
 const INPUT_PILL_WIDTH = 700;
 const INPUT_PILL_HEIGHT = 60;

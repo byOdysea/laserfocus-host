@@ -1,5 +1,5 @@
 import { AppIpcModule, AppMainProcessInstances } from '@core/platform/ipc/types';
-import { BaseAppWindow } from '@ui/common/base-app-window';
+import { BaseAppWindow } from '@lib/base-app-window';
 import { createLogger } from '@utils/logger';
 import { IpcMain } from 'electron';
 
