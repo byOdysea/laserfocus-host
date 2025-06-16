@@ -1118,20 +1118,22 @@ Our MCP implementation is designed to be **completely agnostic** to MCP servers:
 
 ### Quick Start - Just Command & Args
 
-The simplest MCP server configuration:
+The simplest `mcp.json` configuration:
 
 ```json
 {
-  "enabled": true,
-  "servers": [
-    {
-      "name": "filesystem",
-      "stdio": {
-        "command": "@modelcontextprotocol/server-filesystem",
-        "args": ["./"]
+  "mcpServers": {
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "env": {
+        "MEMORY_FILE_PATH": "/path/to/custom/memory.json"
       }
     }
-  ]
+  }
 }
 ```
 
@@ -1199,61 +1201,47 @@ That's it! Our MCP manager automatically:
 #### **Development Setup**
 ```json
 {
-  "enabled": true,
-  "servers": [
-    {
-      "name": "filesystem",
-      "stdio": {
-        "command": "@modelcontextprotocol/server-filesystem",
-        "args": ["./"]
-      }
+  "mcpServers": {
+    "filesystem": {
+      "command": "@modelcontextprotocol/server-filesystem",
+      "args": ["./"],
+      "executor": "npx"
     },
-    {
-      "name": "github",
-      "stdio": {
-        "command": "@modelcontextprotocol/server-github",
-        "env": {
-          "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-        }
-      }
+    "github": {
+      "command": "@modelcontextprotocol/server-github",
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "executor": "npx"
     },
-    {
-      "name": "memory", 
-      "stdio": {
-        "command": "@modelcontextprotocol/server-memory"
-      }
+    "memory": {
+      "command": "@modelcontextprotocol/server-memory",
+      "executor": "npx"
     }
-  ]
+  }
 }
 ```
 
 #### **Research & Analysis Setup**
 ```json
 {
-  "enabled": true,
-  "servers": [
-    {
-      "name": "brave-search",
-      "stdio": {
-        "executor": "uvx",
-        "command": "mcp-server-brave-search",
-        "env": {
-          "BRAVE_API_KEY": "${BRAVE_API_KEY}"
-        }
+  "mcpServers": {
+    "brave-search": {
+      "command": "mcp-server-brave-search",
+      "executor": "uvx",
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
       }
     },
-    {
-      "name": "postgres",
-      "stdio": {
-        "executor": "uvx", 
-        "command": "mcp-server-postgres",
-        "args": ["postgresql://localhost:5432/research"],
-        "env": {
-          "PGPASSWORD": "${DB_PASSWORD}"
-        }
+    "postgres": {
+      "command": "mcp-server-postgres",
+      "args": ["postgresql://localhost:5432/research"],
+      "executor": "uvx",
+      "env": {
+        "PGPASSWORD": "${DB_PASSWORD}"
       }
     }
-  ]
+  }
 }
 ```
 
@@ -1265,11 +1253,9 @@ Only specify advanced features when you need them:
 ```json
 {
   "name": "postgres",
-  "stdio": {
-    "executor": "uvx",
-    "command": "mcp-server-postgres", 
-    "args": ["postgresql://localhost:5432/mydb"]
-  },
+  "command": "mcp-server-postgres",
+  "args": ["postgresql://localhost:5432/mydb"],
+  "executor": "uvx",
   "toolFilters": {
     "blockedTools": ["drop_table", "truncate", "delete_all"]
   }
@@ -1281,14 +1267,12 @@ Only specify advanced features when you need them:
 {
   "name": "enterprise-api",
   "transport": "streamableHttp",
-  "streamableHttp": {
-    "url": "https://api.company.com/mcp",
-    "auth": {
-      "type": "oauth2.1",
-      "clientId": "${CLIENT_ID}",
-      "clientSecret": "${CLIENT_SECRET}",
-      "tokenUrl": "https://auth.company.com/token"
-    }
+  "url": "https://api.company.com/mcp",
+  "auth": {
+    "type": "oauth2.1",
+    "clientId": "${CLIENT_ID}",
+    "clientSecret": "${CLIENT_SECRET}",
+    "tokenUrl": "https://auth.company.com/token"
   }
 }
 ```
@@ -1297,9 +1281,7 @@ Only specify advanced features when you need them:
 ```json
 {
   "name": "read-only-server",
-  "stdio": {
-    "command": "@modelcontextprotocol/server-database"
-  },
+  "command": "@modelcontextprotocol/server-database",
   "componentFilters": {
     "enablePrompts": false,  // Disable prompts
     "blockedResources": ["sensitive:*"]  // Block sensitive resources
@@ -1401,9 +1383,10 @@ Reference in configuration:
 3. Add servers with minimal configuration:
    ```json
    {
-     "name": "my-server",
-     "stdio": {
-       "command": "my-mcp-server"
+     "mcpServers": {
+       "my-server": {
+         "command": "my-mcp-server"
+       }
      }
    }
    ```
