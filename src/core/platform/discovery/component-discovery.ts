@@ -1,15 +1,16 @@
 import { createLogger } from '@/lib/utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DiscoveredComponent, AppModuleConstructor, AppIpcModule } from './types';
+import { UIComponentInfo, AppModuleConstructor, UIComponentType } from './types';
+import { AppIpcModule } from '../ipc/types';
 import { isValidIpcModule } from './component-registry';
 
 const logger = createLogger('[ComponentDiscovery]');
 
-export async function scanComponents(basePath: string): Promise<DiscoveredComponent[]> {
-    const components: DiscoveredComponent[] = [];
+export async function discoverUIComponents(basePath: string): Promise<UIComponentInfo[]> {
+    const components: UIComponentInfo[] = [];
 
-    async function analyze(relativePath: string, type: 'platform' | 'app' | 'widget'): Promise<DiscoveredComponent | null> {
+    async function analyze(relativePath: string, type: UIComponentType): Promise<UIComponentInfo | null> {
         const fullPath = path.join(basePath, relativePath);
         const componentName = path.basename(relativePath);
         try {
@@ -21,7 +22,7 @@ export async function scanComponents(basePath: string): Promise<DiscoveredCompon
                 return { name: componentName, type, path: relativePath, hasMain, hasIpc, hasPreload };
             }
         } catch (error) {
-            logger.debug(`Could not analyze component ${componentName}:`, error);
+            logger.debug(`Could not analyze UI component ${componentName}:`, error);
         }
         return null;
     }
@@ -58,7 +59,7 @@ export async function scanComponents(basePath: string): Promise<DiscoveredCompon
     return components;
 }
 
-export async function loadComponentModules(component: DiscoveredComponent, uiBasePath: string): Promise<{ mainClass?: AppModuleConstructor; ipcHandlers?: AppIpcModule }> {
+export async function loadUIComponentModules(component: UIComponentInfo, uiBasePath: string): Promise<{ mainClass?: AppModuleConstructor; ipcHandlers?: AppIpcModule }> {
     const result: { mainClass?: AppModuleConstructor; ipcHandlers?: AppIpcModule } = {};
 
     if (component.hasMain) {
@@ -98,3 +99,7 @@ export function getMainFileName(componentName: string): string {
 export function getIpcFileName(componentName: string): string {
     return `${componentName.toLowerCase()}.ipc.ts`;
 }
+
+// Legacy exports for backward compatibility
+export const scanComponents = discoverUIComponents;
+export const loadComponentModules = loadUIComponentModules;

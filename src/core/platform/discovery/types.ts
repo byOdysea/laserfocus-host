@@ -1,25 +1,51 @@
+/**
+ * UI Component Discovery Types
+ * 
+ * Terminology:
+ * - UI Component: Umbrella term for everything in src/ui
+ * - App components: Full-blown React web apps (src/ui/apps/)
+ * - Platform components: UI components for Electron app (src/ui/platform/)
+ * - Widgets: Small standalone UI apps (future category)
+ */
+
 import { BrowserWindow, Display } from 'electron';
 import { AppIpcModule } from '../ipc/types';
 
-export interface AppModuleInstance {
-    window?: BrowserWindow;
-    init?: () => void;
+export type UIComponentType = 'platform' | 'app' | 'widget';
+
+export interface AppModuleConstructor {
+    new (
+        primaryDisplay: Display,
+        viteDevServerUrl: string | undefined,
+        preloadPath: string
+    ): any;
 }
 
-export type AppModuleConstructor = new (
-    primaryDisplay: Display,
-    viteDevServerUrl: string | undefined,
-    preloadPath: string
-) => AppModuleInstance;
-
-export interface AppModule {
+export interface UIComponentModule {
     name: string;
-    type: 'platform' | 'app' | 'widget';
-    mainClass?: AppModuleConstructor;
-    ipcHandlers?: AppIpcModule;
-    instance?: AppModuleInstance;
+    type: UIComponentType;
     fullPath: string;
     actualPath: string;
+    mainClass?: AppModuleConstructor;
+    ipcHandlers?: AppIpcModule;
+    instance?: {
+        window?: BrowserWindow;
+        init?: () => void;
+    };
+}
+
+export interface UIComponentRegistry {
+    mainClasses: Map<string, AppModuleConstructor>;
+    ipcModules: Map<string, AppIpcModule>;
+}
+
+export interface UIComponentInfo {
+    name: string;
+    type: UIComponentType;
+    path: string;
+    hasMain: boolean;
+    hasIpc: boolean;
+    hasPreload: boolean;
 }
 
 export interface UIDiscoveryConfig {
@@ -29,16 +55,5 @@ export interface UIDiscoveryConfig {
     preloadBasePath: string;
 }
 
-export interface UIComponentRegistry {
-    mainClasses: Map<string, AppModuleConstructor>;
-    ipcModules: Map<string, AppIpcModule>;
-}
-
-export interface DiscoveredComponent {
-    name: string;
-    type: 'platform' | 'app' | 'widget';
-    path: string;
-    hasMain: boolean;
-    hasIpc: boolean;
-    hasPreload: boolean;
-}
+// Legacy type alias for backward compatibility
+export type AppModule = UIComponentModule;

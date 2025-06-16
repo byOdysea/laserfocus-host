@@ -98,7 +98,7 @@ export function buildUIComponentsSummary(): string {
     let availableApps: string[] = [];
     
     if (uiDiscoveryService) {
-        const allApps = uiDiscoveryService.getAllApps();
+        const allApps = uiDiscoveryService.getAllUIComponents();
         availableApps = allApps.filter((app: string) => 
             !['AthenaWidget', 'InputPill', 'Byokwidget'].includes(app)
         );
