@@ -1,6 +1,6 @@
 import { BrowserWindow, Display } from 'electron';
 import * as logger from '@utils/logger';
-import { BaseAppWindow } from '@ui/common/base-app-window';
+import { BaseAppWindow } from '@lib/base-app-window';
 
 export class RemindersWindow extends BaseAppWindow {
     public window: BrowserWindow;
