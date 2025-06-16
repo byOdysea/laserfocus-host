@@ -1,32 +1,22 @@
-import { BrowserWindow, Display } from 'electron';
-import { createAppFileLoader } from '@lib/utils/app-file-loader';
+import { Display } from 'electron';
 import * as logger from '@utils/logger';
+import { BaseAppWindow } from '@lib/base-app-window';
 
-export class RemindersWindow {
-    public window: BrowserWindow;
-    private fileLoader: ReturnType<typeof createAppFileLoader>;
-    private preloadPath: string;
-
+export class RemindersWindow extends BaseAppWindow {
     constructor(primaryDisplay: Display, viteDevServerUrl: string | undefined, preloadPath: string) {
-        this.fileLoader = createAppFileLoader(viteDevServerUrl);
-        this.preloadPath = preloadPath;
-        this.window = new BrowserWindow({
-            width: 800,
-            height: 600,
-            title: 'reminders',
-            webPreferences: {
-                preload: this.preloadPath,
-                nodeIntegration: false,
-                contextIsolation: true,
-            },
-            frame: false,
-            backgroundColor: '#ffffff',
-            show: false, // Don't show until ready
-            minWidth: 400,
-            minHeight: 300,
-        });
+        super(
+            { width: 800, height: 600 },
+            'reminders',
+            viteDevServerUrl,
+            preloadPath,
+            {
+                frame: false,
+                backgroundColor: '#ffffff',
+                minWidth: 400,
+                minHeight: 300,
+            }
+        );
 
-        // Show window when ready to prevent visual flash
         this.window.once('ready-to-show', () => {
             this.window.show();
         });
@@ -48,18 +38,6 @@ export class RemindersWindow {
         // Open DevTools in development
         if (this.fileLoader.isDevelopment()) {
             // this.window.webContents.openDevTools({ mode: 'detach' });
-        }
-    }
-
-    focus(): void {
-        if (this.window && !this.window.isDestroyed()) {
-            this.window.focus();
-        }
-    }
-
-    close(): void {
-        if (this.window && !this.window.isDestroyed()) {
-            this.window.close();
         }
     }
 }
