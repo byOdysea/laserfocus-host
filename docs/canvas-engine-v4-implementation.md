@@ -8,7 +8,7 @@ Canvas Engine v4 is now live with complete agent autonomy, multi-provider suppor
 
 ### 1. **Pure Tool Provider Architecture**
 - **Canvas Engine v4** (`src/core/engine/canvas-engine-v4.ts`) - No agent, just capabilities
-- **Desktop Canvas Adapter** (`src/core/engine/adapters/desktop-canvas-adapter.ts`) - Maps abstract concepts to Electron
+- **Desktop Canvas Adapter** (`src/core/canvas/adapters/desktop/desktop-canvas-adapter.ts`) - Maps abstract concepts to Electron
 - **Athena Agent v4** (`src/core/agents/athena-agent-v4.ts`) - Standalone conversational agent
 - **Athena Bridge v4** (`src/core/bridge/athena-bridge-v4.ts`) - Integration layer
 
@@ -159,7 +159,8 @@ src/core/
 ├── engine/
 │   ├── canvas-engine-v4.ts          # Pure tool provider
 │   └── adapters/
-│       └── desktop-canvas-adapter.ts # Desktop implementation
+│       └── desktop/
+│           └── desktop-canvas-adapter.ts # Desktop implementation
 ├── agents/
 │   └── athena-agent-v4.ts           # Standalone conversational agent
 ├── bridge/
