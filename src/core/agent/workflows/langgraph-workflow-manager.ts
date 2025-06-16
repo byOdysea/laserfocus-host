@@ -1,17 +1,17 @@
 // LangGraph workflow management for AthenaAgent
 
+import { SystemPromptBuilder } from "@/core/agent/prompts/system-prompt-builder";
+import { ConversationUpdate, ToolStatusCallback } from "@/core/agent/types/tool-status";
+import { CanvasEngine } from "@/core/canvas/canvas-engine";
+import { ConfigurationManager } from "@/core/infrastructure/config/configuration-manager";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { RunnableConfig } from "@langchain/core/runnables";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { END, MemorySaver, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { createHash } from "crypto";
 import logger from "@utils/logger";
-import { CanvasEngine } from "../canvas/canvas-engine";
-import { ConfigurationManager } from "../infrastructure/config/configuration-manager";
-import { ToolStatusCallback, ConversationUpdate } from "../types/tool-status";
-import { SystemPromptBuilder } from "../prompts/system-prompt-builder";
+import { createHash } from "crypto";
 
 export interface WorkflowManager {
     createWorkflow(
@@ -129,8 +129,9 @@ export class LangGraphWorkflowManager implements WorkflowManager {
                 logger.debug(`[Athena] Tool execution completed in ${toolExecutionTime.toFixed(1)}ms`);
 
                 if (lastMessage instanceof AIMessage && lastMessage.tool_calls && this.statusCallback) {
+                    const callback = this.statusCallback;
                     lastMessage.tool_calls.forEach((toolCall) => {
-                        this.statusCallback({
+                        callback({
                             toolName: toolCall.name,
                             status: 'completed',
                             timestamp: new Date().toISOString(),
@@ -142,8 +143,9 @@ export class LangGraphWorkflowManager implements WorkflowManager {
                 logger.error(`[Athena] Tool execution failed:`, error);
 
                 if (lastMessage instanceof AIMessage && lastMessage.tool_calls && this.statusCallback) {
+                    const callback = this.statusCallback;
                     lastMessage.tool_calls.forEach((toolCall) => {
-                        this.statusCallback({
+                        callback({
                             toolName: toolCall.name,
                             status: 'error',
                             timestamp: new Date().toISOString(),
