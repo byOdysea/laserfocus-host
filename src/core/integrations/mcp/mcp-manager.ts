@@ -12,7 +12,7 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import { EventEmitter } from 'events';
 import { MCPConfig, MCPServerConfig } from '../../infrastructure/config/config';
 import { ConfigurableComponent } from '../../infrastructure/config/configurable-component';
-import { MCPConnection, MCPComponentFilter, MCPComponentFilterImpl } from './connection';
+import { MCPComponentFilter, MCPComponentFilterImpl, MCPConnection } from './connection';
 import { MCPTransportFactory, MCPTransportFactoryImpl } from './transports';
 
 const logger = createLogger('[MCP]');
@@ -116,7 +116,7 @@ export class MCPManager extends ConfigurableComponent<MCPConfig> implements MCPC
         for (const serverConfig of config.servers) {
             if (serverConfig.enabled && this.connections.has(serverConfig.name)) {
                 const connection = this.connections.get(serverConfig.name)!;
-                if (!this.deepEqual(connection.config, serverConfig)) {
+                if (!this.deepEqual(connection.state.config, serverConfig)) {
                     logger.info(`[MCP] Reconnecting server with updated config: ${serverConfig.name}`);
                     await this.reconnect(serverConfig.name);
                 }

@@ -9,6 +9,13 @@
       "env": {
         "MEMORY_FILE_PATH": "/path/to/custom/memory.json"
       }
+    },
+    "file-system": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-file-system"
+      ]
     }
   }
 }
