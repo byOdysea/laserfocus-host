@@ -118,10 +118,12 @@ export class InputPill {
             
             // Focus the input element
             this.window.webContents.executeJavaScript(`
-                const input = document.getElementById('query-input');
-                if (input) {
-                    input.focus();
-                }
+                (() => {
+                    const input = document.getElementById('query-input');
+                    if (input) {
+                        input.focus();
+                    }
+                })();
             `);
         }
     }

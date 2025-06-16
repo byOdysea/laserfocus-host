@@ -10,7 +10,7 @@
     "start:prod": "NODE_ENV=production electron . --enable-logging --js-flags=\"--max-old-space-size=4096\" --disable-background-timer-throttling",
     "dev": "NODE_ENV=development vite",
     "package-mac": "electron-builder --mac",
-    "create-app": "tsx src/core/app-discovery/app-generator.ts"
+    "create-app": "tsx src/core/platform/discovery/app-generator.ts"
   },
   "repository": "https://github.com/byOdysea/laserfocus.git",
   "author": "Andres Antillon <axantillon@gmail.com>ail.com>",
