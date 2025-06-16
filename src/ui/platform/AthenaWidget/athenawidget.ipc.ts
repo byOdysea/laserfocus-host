@@ -2,7 +2,7 @@
 import { AppIpcModule } from '@core/platform/ipc/types';
 import logger from '@utils/logger';
 import { IpcMain } from 'electron';
-import { BaseAppWindow } from '@ui/common/base-app-window';
+import { BaseAppWindow } from '@lib/base-app-window';
 
 const AthenaWidgetIpcHandlers: AppIpcModule = {
     moduleId: 'AthenaWidget',
