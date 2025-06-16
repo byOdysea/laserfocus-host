@@ -34,7 +34,7 @@ export class WindowRegistry {
     private eventListeners: Map<WindowEventType, Array<(data: WindowEventData) => void>> = new Map();
     
     constructor() {
-        logger.info('[WindowRegistry] Initialized centralized window registry');
+        logger.info('Initialized centralized window registry');
     }
     
     /**
@@ -48,7 +48,7 @@ export class WindowRegistry {
         
         // Ensure unique IDs
         if (this.windows.has(windowInfo.id)) {
-            logger.warn(`[WindowRegistry] Window ID "${windowInfo.id}" already exists, updating registration`);
+            logger.warn(`Window ID "${windowInfo.id}" already exists, updating registration`);
         }
         
         this.windows.set(windowInfo.id, fullWindowInfo);
@@ -56,8 +56,8 @@ export class WindowRegistry {
         // Set up window event listeners
         this.setupWindowEventListeners(fullWindowInfo);
         
-        logger.info(`[WindowRegistry] Registered window: ${windowInfo.id} (${windowInfo.title})`);
-        logger.info(`[WindowRegistry] Capabilities: [${windowInfo.capabilities.join(', ')}]`);
+        logger.info(`Registered window: ${windowInfo.id} (${windowInfo.title})`);
+        logger.info(`Capabilities: [${windowInfo.capabilities.join(', ')}]`);
         
         // Emit registration event
         this.emitEvent('window-registered', fullWindowInfo);
@@ -70,7 +70,7 @@ export class WindowRegistry {
         const windowInfo = this.windows.get(windowId);
         if (windowInfo) {
             this.windows.delete(windowId);
-            logger.info(`[WindowRegistry] Unregistered window: ${windowId}`);
+            logger.info(`Unregistered window: ${windowId}`);
             
             // Emit unregistration event
             this.emitEvent('window-unregistered', windowInfo);
@@ -178,7 +178,7 @@ export class WindowRegistry {
         const windowInfo = this.windows.get(windowId);
         if (windowInfo) {
             windowInfo.metadata = { ...windowInfo.metadata, ...metadata };
-            logger.info(`[WindowRegistry] Updated metadata for window: ${windowId}`);
+            logger.info(`Updated metadata for window: ${windowId}`);
         }
     }
     
@@ -264,7 +264,7 @@ export class WindowRegistry {
             try {
                 listener(eventData);
             } catch (error) {
-                logger.error(`[WindowRegistry] Error in event listener for ${type}:`, error);
+                logger.error(`Error in event listener for ${type}:`, error);
             }
         }
     }
@@ -289,6 +289,6 @@ export function getWindowRegistry(): WindowRegistry {
 export function destroyWindowRegistry(): void {
     if (windowRegistry) {
         windowRegistry = null;
-        logger.info('[WindowRegistry] Destroyed window registry');
+        logger.info('Destroyed window registry');
     }
 } 
