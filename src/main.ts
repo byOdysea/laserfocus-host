@@ -11,7 +11,7 @@ import { app, BrowserWindow, Display, ipcMain, screen } from 'electron';
 // LangGraph tool binding creates multiple AbortSignal listeners
 import { setMaxListeners } from 'events';
 try {
-    setMaxListeners(50); // Handle complex multi-tool operations
+    setMaxListeners(50); // Handle complex multi-tool operations 
     createLogger('[Main]').info('[App] Set EventTarget max listeners to 50 for LangChain operations');
 } catch (error) {
     // Fallback - set on process if setMaxListeners doesn't work globally

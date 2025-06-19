@@ -1,5 +1,81 @@
 import { VALIDATION } from '@/core/infrastructure/config/ui-constants';
 import log from 'electron-log';
+import chalk from 'chalk';
+
+// Color scheme for different log levels and components
+const colors = {
+  // Log levels
+  error: chalk.red.bold,
+  warn: chalk.yellow.bold,
+  info: chalk.blue,
+  debug: chalk.gray,
+  
+  // Module prefixes
+  main: chalk.magenta.bold,
+  agent: chalk.green.bold,
+  canvas: chalk.cyan.bold,
+  ui: chalk.blue.bold,
+  config: chalk.yellow.bold,
+  ipc: chalk.magentaBright.bold,
+  window: chalk.yellowBright.bold,
+  
+  // Special highlights
+  success: chalk.green.bold,
+  highlight: chalk.white.bold,
+  dim: chalk.gray,
+  
+  // Status indicators
+  ready: chalk.green,
+  loading: chalk.yellow,
+  failed: chalk.red,
+  
+  // Data highlighting
+  value: chalk.cyan,
+  count: chalk.magenta,
+  path: chalk.blue,
+  url: chalk.underline.blue,
+};
+
+// Enhanced color formatter for module names
+function colorizeModuleName(name: string): string {
+  const cleanName = name.replace(/[\[\]]/g, '').toLowerCase();
+  
+  // Match specific module types
+  if (cleanName.includes('main')) return colors.main(name);
+  if (cleanName.includes('agent') || cleanName.includes('athena')) return colors.agent(name);
+  if (cleanName.includes('canvas')) return colors.canvas(name);
+  if (cleanName.includes('ui') || cleanName.includes('widget')) return colors.ui(name);
+  if (cleanName.includes('config')) return colors.config(name);
+  if (cleanName.includes('ipc') || cleanName.includes('bridge')) return colors.ipc(name);
+  if (cleanName.includes('window')) return colors.window(name);
+  
+  // Default to highlight color
+  return colors.highlight(name);
+}
+
+// Enhanced message formatter with context-aware coloring
+function enhanceMessage(message: string, level: 'error' | 'warn' | 'info' | 'debug'): string {
+  let enhanced = message;
+  
+  // Color code specific patterns
+  enhanced = enhanced.replace(/\b(ready|initialized|success|complete|loaded)\b/gi, (match) => colors.success(match));
+  enhanced = enhanced.replace(/\b(loading|initializing|starting)\b/gi, (match) => colors.loading(match));
+  enhanced = enhanced.replace(/\b(error|failed|failure|exception)\b/gi, (match) => colors.failed(match));
+  
+  // Color code numbers and counts
+  enhanced = enhanced.replace(/\b(\d+)\b/g, (match) => colors.count(match));
+  
+  // Color code file paths
+  enhanced = enhanced.replace(/\b[a-zA-Z0-9_-]+\.(ts|js|json|html|css|tsx|jsx)\b/g, (match) => colors.path(match));
+  
+  // Color code URLs
+  enhanced = enhanced.replace(/https?:\/\/[^\s]+/g, (match) => colors.url(match));
+  
+  // Color code values in quotes
+  enhanced = enhanced.replace(/"([^"]+)"/g, (match, value) => `"${colors.value(value)}"`);
+  
+  return enhanced;
+}
 
 // Environment-aware logging configuration
 const IS_DEV = process.env.NODE_ENV === 'development';
@@ -176,13 +252,42 @@ function processArgs(args: any[]): string {
 // Export the main log object and potentially the helper if needed elsewhere (though unlikely)
 export const { error, warn, info, verbose, debug, silly } = log;
 
-// Overwrite methods to use processArgs for formatting
-log.error = (...args: any[]) => log.functions.error(processArgs(args));
-log.warn = (...args: any[]) => log.functions.warn(processArgs(args));
-log.info = (...args: any[]) => log.functions.info(processArgs(args));
-log.verbose = (...args: any[]) => log.functions.verbose(processArgs(args));
-log.debug = (...args: any[]) => log.functions.debug(processArgs(args));
-log.silly = (...args: any[]) => log.functions.silly(processArgs(args));
+// Overwrite methods to use processArgs for formatting with colors
+log.error = (...args: any[]) => {
+  const message = processArgs(args);
+  const enhanced = enhanceMessage(message, 'error');
+  log.functions.error(colors.error('ERROR:') + ' ' + enhanced);
+};
+
+log.warn = (...args: any[]) => {
+  const message = processArgs(args);
+  const enhanced = enhanceMessage(message, 'warn');
+  log.functions.warn(colors.warn('WARN:') + ' ' + enhanced);
+};
+
+log.info = (...args: any[]) => {
+  const message = processArgs(args);
+  const enhanced = enhanceMessage(message, 'info');
+  log.functions.info(colors.info('INFO:') + ' ' + enhanced);
+};
+
+log.verbose = (...args: any[]) => {
+  const message = processArgs(args);
+  const enhanced = enhanceMessage(message, 'info');
+  log.functions.verbose(colors.info('VERBOSE:') + ' ' + enhanced);
+};
+
+log.debug = (...args: any[]) => {
+  const message = processArgs(args);
+  const enhanced = enhanceMessage(message, 'debug');
+  log.functions.debug(colors.debug('DEBUG:') + ' ' + enhanced);
+};
+
+log.silly = (...args: any[]) => {
+  const message = processArgs(args);
+  const enhanced = enhanceMessage(message, 'debug');
+  log.functions.silly(colors.dim('SILLY:') + ' ' + enhanced);
+};
 
 /**
  * Creates a new logger instance with a specific module name prefix.
@@ -191,12 +296,29 @@ log.silly = (...args: any[]) => log.functions.silly(processArgs(args));
  * @returns A logger object with info, warn, error, and debug methods.
  */
 export function createLogger(name: string) {
-  const prefix = `${name} `;
+  const colorizedPrefix = `${colorizeModuleName(name)} `;
+  
   return {
-    error: (...args: any[]) => log.functions.error(prefix + processArgs(args)),
-    warn: (...args: any[]) => log.functions.warn(prefix + processArgs(args)),
-    info: (...args: any[]) => log.functions.info(prefix + processArgs(args)),
-    debug: (...args: any[]) => log.functions.debug(prefix + processArgs(args)),
+    error: (...args: any[]) => {
+      const message = processArgs(args);
+      const enhanced = enhanceMessage(message, 'error');
+      log.functions.error(colorizedPrefix + colors.error('ERROR:') + ' ' + enhanced);
+    },
+    warn: (...args: any[]) => {
+      const message = processArgs(args);
+      const enhanced = enhanceMessage(message, 'warn');
+      log.functions.warn(colorizedPrefix + colors.warn('WARN:') + ' ' + enhanced);
+    },
+    info: (...args: any[]) => {
+      const message = processArgs(args);
+      const enhanced = enhanceMessage(message, 'info');
+      log.functions.info(colorizedPrefix + colors.info('INFO:') + ' ' + enhanced);
+    },
+    debug: (...args: any[]) => {
+      const message = processArgs(args);
+      const enhanced = enhanceMessage(message, 'debug');
+      log.functions.debug(colorizedPrefix + colors.debug('DEBUG:') + ' ' + enhanced);
+    },
   };
 }
 
