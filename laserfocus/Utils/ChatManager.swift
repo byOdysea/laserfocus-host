@@ -66,11 +66,16 @@ class ChatManager: ObservableObject {
         errorMessage = nil
         
         do {
-            // Call API
-            let response = try await apiService.invokeAthena(message: content)
+            // Call API with existing thread_id if available
+            let apiResponse = try await apiService.invokeAthena(message: content, threadId: chat.threadId)
             
-            // Add AI response
-            let aiMessage = Message(role: "assistant", content: response)
+            // Update chat's thread_id if not set
+            if chat.threadId == nil {
+                chat.threadId = apiResponse.thread_id
+            }
+            
+            // Add AI response using only the message content
+            let aiMessage = Message(role: "assistant", content: apiResponse.response)
             chat.messages.append(aiMessage)
             
             // Save AI message
@@ -86,6 +91,21 @@ class ChatManager: ObservableObject {
     
     func selectChat(_ chat: Chat) {
         selectedChat = chat
+    }
+    
+    func findChatByThreadId(_ threadId: String) -> Chat? {
+        guard let modelContext = modelContext else {
+            return nil
+        }
+        
+        let descriptor = FetchDescriptor<Chat>()
+        do {
+            let chats = try modelContext.fetch(descriptor)
+            return chats.first { $0.threadId == threadId }
+        } catch {
+            print("Error fetching chats: \(error)")
+            return nil
+        }
     }
     
     func deleteChat(_ chat: Chat) {

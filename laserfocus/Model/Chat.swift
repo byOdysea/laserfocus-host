@@ -26,11 +26,13 @@ final class Chat {
     var title: String
     var timestamp: Date
     var messages: [Message]
+    var threadId: String?
     
-    init(title: String = "New Chat", timestamp: Date = Date(), messages: [Message] = []) {
+    init(title: String = "New Chat", timestamp: Date = Date(), messages: [Message] = [], threadId: String? = nil) {
         self.id = UUID()
         self.title = title
         self.timestamp = timestamp
         self.messages = messages
+        self.threadId = threadId
     }
 }

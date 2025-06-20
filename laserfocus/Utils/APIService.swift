@@ -8,6 +8,11 @@
 import Foundation
 import Combine
 
+struct APIResponse: Codable {
+    let response: String
+    let thread_id: String
+}
+
 class APIService: ObservableObject {
     static let shared = APIService()
     
@@ -20,7 +25,7 @@ class APIService: ObservableObject {
     
     private init() {}
     
-    func invokeAthena(message: String) async throws -> String {
+    func invokeAthena(message: String, threadId: String? = nil) async throws -> APIResponse {
         // Ensure we have a valid JWT token
         try await ensureValidToken()
         
@@ -37,7 +42,10 @@ class APIService: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        let payload = ["message": message]
+        var payload: [String: Any] = ["message": message]
+        if let threadId = threadId {
+            payload["thread_id"] = threadId
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         
         do {
@@ -66,10 +74,11 @@ class APIService: ObservableObject {
                 }
                 
                 if let responseString = String(data: retryData, encoding: .utf8) {
-                    return responseString
-                } else {
-                    throw APIError.invalidData
+                    print("🔄 API Response (retry): \(responseString)")
                 }
+                
+                let apiResponse = try JSONDecoder().decode(APIResponse.self, from: retryData)
+                return apiResponse
             }
             
             guard httpResponse.statusCode == 200 else {
@@ -77,10 +86,11 @@ class APIService: ObservableObject {
             }
             
             if let responseString = String(data: data, encoding: .utf8) {
-                return responseString
-            } else {
-                throw APIError.invalidData
+                print("✅ API Response: \(responseString)")
             }
+            
+            let apiResponse = try JSONDecoder().decode(APIResponse.self, from: data)
+            return apiResponse
             
         } catch {
             if error is APIError {
@@ -93,7 +103,7 @@ class APIService: ObservableObject {
     
     private func ensureValidToken() async throws {
         // Check if we have a valid token that hasn't expired
-        if let token = accessToken,
+        if let _ = accessToken,
            let expirationDate = tokenExpirationDate,
            Date() < expirationDate.addingTimeInterval(-APIConfig.tokenRefreshBuffer) {
             return
@@ -128,6 +138,10 @@ class APIService: ObservableObject {
             
             guard httpResponse.statusCode == 200 else {
                 throw APIError.authenticationFailed
+            }
+            
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("🔐 Auth Response: \(responseString)")
             }
             
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],

@@ -80,7 +80,7 @@ class WindowManager: ObservableObject {
         print("🔍 WindowManager.openSecondaryWindow() called")
         
         // Use NSApplication to open a new window
-        if let app = NSApplication.shared.delegate as? NSObject {
+        if NSApplication.shared.delegate != nil {
             print("🔍 Found app delegate, attempting to open window")
         }
         

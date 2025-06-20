@@ -204,37 +204,78 @@ struct ChatDetailView: View {
 struct MessageBubble: View {
     let message: Message
     
+    // Athena's brand color from assets
+    private let athenaColor = Color("AthenaColor")
+    
     var body: some View {
-        HStack {
+        HStack(alignment: .top, spacing: 12) {
             if message.role == "user" {
-                Spacer()
-            }
-            
-            VStack(alignment: message.role == "user" ? .trailing : .leading, spacing: 4) {
-                Text(message.content)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        message.role == "user" ? 
-                        Color.accentColor : 
-                        Color(NSColor.controlBackgroundColor)
-                    )
-                    .foregroundColor(
-                        message.role == "user" ? 
-                        .white : 
-                        .primary
-                    )
-                    .cornerRadius(12)
+                Spacer(minLength: 60)
                 
-                Text(message.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            if message.role != "user" {
-                Spacer()
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(message.content)
+                        .font(.system(size: 15, weight: .medium))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(18)
+                    
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                // Athena's avatar
+                VStack {
+                    Circle()
+                        .fill(athenaColor.opacity(0.12))
+                        .frame(width: 36, height: 36)
+                        .overlay(
+                            Circle()
+                                .stroke(athenaColor.opacity(0.3), lineWidth: 1.5)
+                        )
+                        .overlay(
+                            Image("AthenaIcon")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 24, height: 24)
+                        )
+                        .shadow(color: athenaColor.opacity(0.2), radius: 3, x: 0, y: 1)
+                    Spacer()
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Athena")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(athenaColor)
+                        Spacer()
+                    }
+                    
+                    Text(message.content)
+                        .font(.system(size: 15))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18)
+                                .fill(athenaColor.opacity(0.08))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 18)
+                                        .stroke(athenaColor.opacity(0.2), lineWidth: 1)
+                                )
+                        )
+                        .foregroundColor(.primary)
+                    
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer(minLength: 60)
             }
         }
+        .padding(.horizontal, 4)
     }
 }
 
