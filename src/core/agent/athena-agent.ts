@@ -20,6 +20,7 @@ import { MCPManager } from '../integrations/mcp/mcp-manager';
 import { ToolStatusCallback, ConversationUpdate, ToolStatusUpdate } from './types/tool-status';
 import { WorkflowManager, LangGraphWorkflowManager } from './workflows/langgraph-workflow-manager';
 import { SystemPromptBuilder, DefaultSystemPromptBuilder } from './prompts/system-prompt-builder';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
 // Exported types for agent status
 export type AgentConnectionStatus = 'unknown' | 'connected' | 'failed' | 'no-key' | 'local' | 'disabled' | 'configured' | 'error' | 'disconnected'; // Added 'disabled', 'configured', 'error', 'disconnected' to cover all known states
