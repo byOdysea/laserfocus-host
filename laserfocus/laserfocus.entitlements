@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Enable App Sandbox -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    
+    <!-- Allow network access -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    
+    <!-- Allow outgoing network connections -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+    
+    <!-- Allow files chosen by the user to be read/write -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    
+    <!-- Allow access to user's home directory -->
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+    
+    <!-- Allow access to user's Documents directory -->
+    <key>com.apple.security.files.documents.read-write</key>
+    <true/>
+    
+    <!-- Allow XPC communication -->
+    <key>com.apple.security.temporary-exception.mach-register.global-name</key>
+    <array>
+        <string>*</string>
+    </array>
+    
+    <!-- Allow mach lookup -->
+    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+    <array>
+        <string>*</string>
+    </array>
+    
+    <!-- Allow virtualization framework access -->
+    <key>com.apple.security.virtualization</key>
+    <true/>
+    
+    <!-- Allow hypervisor framework access -->
+    <key>com.apple.security.hypervisor</key>
+    <true/>
+    
+    <!-- Allow access to Docker daemon socket and system directories -->
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
+    <array>
+        <string>/usr/local/bin/container</string>
+        <string>/usr/local/bin/docker</string>
+        <string>/Users/aguilarcarboni/Developer/Repositories/Odysea/api</string>
+        <string>/tmp</string>
+        <string>/var/tmp</string>
+        <string>/var/run</string>
+        <string>/var/run/docker.sock</string>
+        <string>/Library</string>
+        <string>/System</string>
+        <string>/usr</string>
+        <string>/</string>
+    </array>
+    
+    <!-- Allow executing external binaries -->
+    <key>com.apple.security.temporary-exception.files.absolute-path.executable</key>
+    <array>
+        <string>/usr/local/bin/container</string>
+        <string>/usr/local/bin/docker</string>
+        <string>/usr/bin</string>
+        <string>/bin</string>
+        <string>/sbin</string>
+        <string>/usr/sbin</string>
+    </array>
+    
+    <!-- Allow Unix domain socket access -->
+    <key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+    <array>
+        <string>/.docker</string>
+    </array>
+    
+    <!-- Inherit security policy -->
+    <key>com.apple.security.inherit</key>
+    <true/>
+</dict>
+</plist>
