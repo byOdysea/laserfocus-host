@@ -7,13 +7,24 @@
 
 import SwiftUI
 import SwiftData
+import Logging
 
 @main
 struct laserfocusApp: App {
     // Shared instances
     @StateObject private var windowManager = WindowManager()
     @StateObject private var chatManager = ChatManager()
+    @StateObject private var mcpServiceManager = MCPServiceManager.shared
     
+    init() {
+        // Configure logging following official MCP Swift SDK pattern
+        LoggingSystem.bootstrap { label in
+            var handler = StreamLogHandler.standardOutput(label: label)
+            handler.logLevel = .info
+            return handler
+        }
+    }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Chat.self
@@ -28,27 +39,50 @@ struct laserfocusApp: App {
     }()
 
     var body: some Scene {
-        // Main window
+        // Main window only
         WindowGroup(id: "main") {
             ChatView()
                 .environmentObject(windowManager)
                 .environmentObject(chatManager)
+                .onAppear {
+                    // Start MCP service when app appears
+                    Task {
+                        await mcpServiceManager.startService()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    // Graceful shutdown on app termination
+                    Task {
+                        await mcpServiceManager.handleApplicationWillTerminate()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    // Auto-restart service if needed
+                    Task {
+                        await mcpServiceManager.handleApplicationDidBecomeActive()
+                    }
+                }
         }
         .modelContainer(sharedModelContainer)
         .defaultPosition(.topLeading)
-        
-        // Secondary window (InputPill)
-        WindowGroup(id: "secondary") {
-            InputPillView()
-                .environmentObject(windowManager)
-                .environmentObject(chatManager)
+    }
+}
+
+// MARK: - Application Delegate for Enhanced Lifecycle Management
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillTerminate(_ notification: Notification) {
+        // Ensure graceful shutdown
+        Task {
+            await MCPServiceManager.shared.handleApplicationWillTerminate()
         }
-        .modelContainer(sharedModelContainer)
-        .defaultSize(width: 700, height: 100)
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
-        .windowLevel(.floating)
-        .defaultPosition(.topTrailing)
+    }
+    
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Auto-restart if needed
+        Task {
+            await MCPServiceManager.shared.handleApplicationDidBecomeActive()
+        }
     }
 }
 

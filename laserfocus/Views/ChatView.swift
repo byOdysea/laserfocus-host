@@ -53,7 +53,7 @@ struct ChatView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Open Input Window") {
-                        openWindow(id: "secondary")
+                        windowManager.createSecondaryWindow()
                     }
                 }
             }
@@ -71,7 +71,12 @@ struct ChatView: View {
             if chatManager.selectedChat == nil && !chats.isEmpty {
                 chatManager.selectChat(chats.first!)
             }
+            // Provide ChatManager to WindowManager so it can create secondary window
+            windowManager.setChatManager(chatManager)
         }
+        .background(
+            WindowAccessor(windowType: .main, windowManager: windowManager)
+        )
     }
 
     private func createNewChat() {

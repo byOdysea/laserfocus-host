@@ -75,13 +75,6 @@ struct InputPillView: View {
                 .fill(Color(NSColor.controlBackgroundColor))
                 .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
         )
-        .background(
-            WindowAccessor(
-                windowType: .secondary,
-                mainWindow: $windowManager.mainWindow,
-                secondaryWindow: $windowManager.secondaryWindow
-            )
-        )
         .onAppear {
             print("🔍 InputPillView onAppear called")
             chatManager.setModelContext(modelContext)

@@ -161,6 +161,44 @@ class APIService: ObservableObject {
             }
         }
     }
+    
+    // MARK: - MCP Refresh
+    /// Trigger Athena (Python MCP client) to refresh its MCP server list
+    func refreshMCP() async throws {
+        // Ensure we have a valid JWT token
+        try await ensureValidToken()
+        
+        guard let url = URL(string: "\(baseURL)/athena/mcp/refresh") else {
+            throw APIError.invalidURL
+        }
+        
+        guard let token = accessToken else {
+            throw APIError.authenticationRequired
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = Data("{}".utf8)
+        
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.invalidResponse
+            }
+            guard httpResponse.statusCode == 200 else {
+                throw APIError.serverError(httpResponse.statusCode)
+            }
+            print("🔔 MCP refresh triggered successfully")
+        } catch {
+            if error is APIError {
+                throw error
+            } else {
+                throw APIError.networkError(error)
+            }
+        }
+    }
 }
 
 enum APIError: LocalizedError {

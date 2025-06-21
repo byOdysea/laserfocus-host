@@ -18,7 +18,7 @@ struct APIConfig {
     static let scopes = ["all"]
     
     // MARK: - Server Configuration
-    static let baseURL = "http://127.0.0.1:8080"
+    static let baseURL = "http://127.0.0.1:3000"
     
     // MARK: - Token Management
     static let tokenRefreshBuffer: TimeInterval = 60 // Refresh token 1 minute before expiry
